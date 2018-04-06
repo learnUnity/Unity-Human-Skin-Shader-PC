@@ -223,8 +223,8 @@ inline InternalTessInterp_appdata_full tessvert_surf (appdata_full v) {
 #define PIE8 25.132741228718345
 
 #define BLOODCOLOR(NdotL)\
-	float nl = NdotL * 0.5 + 0.5;\
-	float3 diffuse = tex2D(_RampTex, float2(nl, _BloodValue));
+	float3 nl = NdotL * 0.5 + 0.5;\
+	float3 diffuse = (tex2D(_RampTex, float2(nl.x, _BloodValue)) + tex2D(_RampTex, float2(nl.y, _BloodValue)) + tex2D(_RampTex, float2(nl.z, _BloodValue))) * 0.3333333333;
 
 #define BRDF\
   float4 t = float4(1.04166666, 0.475, 0.01822916, 0.25);\
@@ -252,6 +252,7 @@ float3 specColor(float3 NoV, float3 NoL, float3 NoF, float3 specular, float Smoo
   return float3(d.x * brdf[0] * v.x) + float3(d.y * brdf[1] * v.y) + float3(d.z * brdf[2] * v.z);
 }
 //Skin
+//Skin
 inline float4 SkinStandardSpecular (SurfaceOutputStandardSpecular s, float3 secondNormal, float3 thirdNormal, float3 viewDir, UnityGI gi)
 {
     // energy conservation
@@ -268,6 +269,8 @@ inline float4 SkinStandardSpecular (SurfaceOutputStandardSpecular s, float3 seco
     float3 NdotL = saturate(float3(dot(s.Normal, gi.light.dir), dot(secondNormal, gi.light.dir), dot(thirdNormal, gi.light.dir)));
     float3 NdotF = saturate(float3(dot(s.Normal, Half), dot(secondNormal, Half), dot(thirdNormal, Half)));
     float3 NdotV = float3(dot(s.Normal, viewDir), dot(secondNormal, viewDir), dot(thirdNormal, viewDir));
+    float3 floatDir = normalize (float3(gi.light.dir) + viewDir);
+    float LoH = saturate(dot(gi.light.dir, floatDir));
     float Smoothness = s.Smoothness;
     float3 specularColor = 0;
     #if UNITY_PASS_FORWARDADD
@@ -295,7 +298,7 @@ inline float4 SkinStandardSpecular (SurfaceOutputStandardSpecular s, float3 seco
     specularColor += specColor(NdotV, NdotL, NdotF, s.Specular, Smoothness);
     Smoothness *= 0.7;
     specularColor += specColor(NdotV, NdotL, NdotF, s.Specular, Smoothness);
-    specularColor *= 0.11111111;
+    specularColor *= 0.11111111 * FresnelTerm (s.Specular, LoH);
     c.rgb += saturate(specularColor * gi.light.color);
     c.a = outputAlpha;
     return c;
@@ -308,7 +311,7 @@ inline float3 SubTransparentColor(float3 lightDir, float3 viewDir, float3 lightC
 
 inline void vert(inout appdata_full v){
 
-	v.vertex.xyz += v.normal *( (tex2Dlod(_HeightMap, v.texcoord).r - 0.5) * _VertexScale +   _VertexOffset);
+	v.vertex.xyz += v.normal *( (tex2Dlod(_HeightMap, v.texcoord).r + _VertexOffset) * _VertexScale);
 
 }
 
@@ -962,7 +965,7 @@ inline InternalTessInterp_appdata_base tessvert_surf_shadowCaster (appdata_base 
 }
 
 inline void vert_shadow(inout appdata_base v){
-	v.vertex.xyz += v.normal *( (tex2Dlod(_HeightMap, v.texcoord).r - 0.5) * _VertexScale +   _VertexOffset);
+	v.vertex.xyz += v.normal *( (tex2Dlod(_HeightMap, v.texcoord).r + _VertexOffset) * _VertexScale);
 }
 
 [UNITY_domain("tri")]

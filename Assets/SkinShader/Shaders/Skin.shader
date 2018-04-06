@@ -217,7 +217,7 @@ float3 specColor(float3 NoV, float3 NoL, float3 NoF, float3 specular, float Smoo
   float3 brdf[3];
   BRDF
 	float3 v = 1 / ((NoL*oneMinusK + k)*(NoV*oneMinusK + k));
-  return float3(d.x * brdf[0] * v.x) + float3(d.y * brdf[1] * v.y) + float3(d.z * brdf[2] * v.z);
+  return (float3(d.x * brdf[0] * v.x) + float3(d.y * brdf[1] * v.y) + float3(d.z * brdf[2] * v.z));
 }
 //Skin
 inline float4 SkinStandardSpecular (SurfaceOutputStandardSpecular s, float3 secondNormal, float3 thirdNormal, float3 viewDir, UnityGI gi)
@@ -236,6 +236,8 @@ inline float4 SkinStandardSpecular (SurfaceOutputStandardSpecular s, float3 seco
     float3 NdotL = saturate(float3(dot(s.Normal, gi.light.dir), dot(secondNormal, gi.light.dir), dot(thirdNormal, gi.light.dir)));
     float3 NdotF = saturate(float3(dot(s.Normal, Half), dot(secondNormal, Half), dot(thirdNormal, Half)));
     float3 NdotV = float3(dot(s.Normal, viewDir), dot(secondNormal, viewDir), dot(thirdNormal, viewDir));
+    float3 floatDir = normalize (float3(gi.light.dir) + viewDir);
+    float LoH = saturate(dot(gi.light.dir, floatDir));
     float Smoothness = s.Smoothness;
     float3 specularColor = 0;
     #if UNITY_PASS_FORWARDADD
@@ -263,7 +265,7 @@ inline float4 SkinStandardSpecular (SurfaceOutputStandardSpecular s, float3 seco
     specularColor += specColor(NdotV, NdotL, NdotF, s.Specular, Smoothness);
     Smoothness *= 0.7;
     specularColor += specColor(NdotV, NdotL, NdotF, s.Specular, Smoothness);
-    specularColor *= 0.11111111;
+    specularColor *= 0.11111111 * FresnelTerm (s.Specular, LoH);
     c.rgb += saturate(specularColor * gi.light.color);
     c.a = outputAlpha;
     return c;
