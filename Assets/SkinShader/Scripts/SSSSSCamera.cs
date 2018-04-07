@@ -24,8 +24,7 @@ public class SSSSSCamera : MonoBehaviour
 	[Range (0, 10)]
 	public float offset = 0.5f;
 	public LayerMask skinLayer = 1 << 31;
-	int tempID1;
-	int tempID2;
+
 	int _RangeID;
 	// Use this for initialization
 	void Awake ()
@@ -58,8 +57,6 @@ public class SSSSSCamera : MonoBehaviour
 		offsetID = Shader.PropertyToID ("_Offset");
 		mat.SetFloat (offsetID, offset);
 		camG.AddComponent<SSSSSDepthCamera> ().current = this;
-		tempID1 = Shader.PropertyToID ("_CullFrontDepthTex");
-		tempID2 = Shader.PropertyToID ("_Temp2");
 	}
 
 	void OnPreRender ()

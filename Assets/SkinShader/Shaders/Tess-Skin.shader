@@ -24,6 +24,8 @@
     _DetailNormalScale("Secondary Normal Scale", float) = 1
   	_ThirdBump("Third Normal(RGB)", 2D) = "bump" {}
     _ThirdNormalScale("Third Normal Scale", float) = 1
+    _FourthBump("Fourth Normal(RGB)", 2D) = "bump"{}
+    _FourthNormalScale("Fourth Normal Scale", float) = 1
 		_RampTex("Ramp light texture", 2D) = "white"{}
 		_BloodValue("Blood Value", Range(0.01, 1)) = 0.5
     //TODO
@@ -113,7 +115,6 @@ CGINCLUDE
 		float _MinDist;
 		float _MaxDist;
 		float _Tessellation;
-		float _HeightScale;
 		float _Phong;
 		float _NormalScale;
 		float _Occlusion;
@@ -124,17 +125,19 @@ CGINCLUDE
 		float _Thickness;
     float _DetailNormalScale;
     float _ThirdNormalScale;
+    float _FourthNormalScale;
 		float4 _SSColor;
 		float _MinDistance;
 		sampler2D _DetailAlbedo;
 		float _AlbedoBlend;
 		sampler2D _DetailBump;
     sampler2D _ThirdBump;
+    sampler2D _FourthBump;
     sampler2D _SubNormalMaps[8];
 		float4 _DetailAlbedo_ST;
 		float4 _DetailBump_ST;
     float4 _ThirdBump_ST;
-		float4 _FrustArray[4];
+    float4 _FourthBump_ST;
 
 		sampler2D _BumpMap;
 		sampler2D _SpecularMap;
@@ -142,7 +145,6 @@ CGINCLUDE
 		sampler2D _OcclusionMap;
 		sampler2D _RampTex;
 		sampler2D _MainTex;
-		uniform sampler2D _CullFrontDepthTex;
 		half _Glossiness;
 		float4 _Color;
 
@@ -217,44 +219,94 @@ inline InternalTessInterp_appdata_full tessvert_surf (appdata_full v) {
   return o;
 }
 
+inline float4 Skin_GGXVisibilityTerm (float4 NdotL, float4 NdotV, float roughness)
+{
+    float a = roughness;
+    float4 lambdaV = NdotL * (NdotV * (1 - a) + a);
+    float4 lambdaL = NdotV * (NdotL * (1 - a) + a);
+    return 0.5f / (lambdaV + lambdaL + 1e-5f);
+}
 
+inline float4 Skin_GGXTerm (float4 NdotH, float roughness)
+{
+    float a2 = roughness * roughness;
+    float4 d = (NdotH * a2 - NdotH) * NdotH + 1.0f; // 2 mad
+    return UNITY_INV_PI * a2 / (d * d + 1e-7f); // This function is not intended to be running on Mobile,
+                                            // therefore epsilon is smaller than what can be represented by half
+}
 
-#define PIE 3.1415926535
-#define PIE8 25.132741228718345
+inline float4 Pow_5 (float4 x)
+{
+    return x*x * x*x * x;
+}
+
+inline float3 FresnelLerp (float3 F0, float3 F90, float4 cosA)
+{
+    float4 t = Pow_5 (1 - cosA);   // ala Schlick interpoliation
+    return lerp (F0, F90, (t.x + t.y + t.z + t.w) * 0.25);
+}
 
 #define BLOODCOLOR(NdotL)\
-	float3 nl = NdotL * 0.5 + 0.5;\
-	float3 diffuse = (tex2D(_RampTex, float2(nl.x, _BloodValue)) + tex2D(_RampTex, float2(nl.y, _BloodValue)) + tex2D(_RampTex, float2(nl.z, _BloodValue))) * 0.3333333333;
+	float4 NdotLInDiff = NdotL * 0.5 + 0.5;\
+	float3 diffuse = (tex2D(_RampTex, float2(NdotLInDiff.x, _BloodValue)) + tex2D(_RampTex, float2(NdotLInDiff.y, _BloodValue)) + tex2D(_RampTex, float2(NdotLInDiff.z, _BloodValue)) + tex2D(_RampTex, float2(NdotLInDiff.w, _BloodValue))).xyz * 0.25;
 
-#define BRDF\
-  float4 t = float4(1.04166666, 0.475, 0.01822916, 0.25);\
-  t *= Smoothness;\
-  t += float4 (0,0,-0.015625, 0.75);\
-  float a1 = t.w;\
-  float a0 = t.x * min(t.y, exp2(-9.28 * NoV.x)) + t.z;\
-  float a2 = t.x * min(t.y, exp2(-9.28 * NoV.y)) + t.z;\
-  float a3 = t.x * min(t.y, exp2(-9.28 * NoV.z)) + t.z;\
-  brdf[0] = saturate(float3(a0 + specular * (a1 - a0)));\
-  brdf[1] = saturate(float3(a2 + specular * (a1 - a2)));\
-  brdf[2] = saturate(float3(a3 + specular * (a1 - a3)));
-
-
-
-float3 specColor(float3 NoV, float3 NoL, float3 NoF, float3 specular, float Smoothness){
-  float _SP = pow(8192, Smoothness);
-  float _SPP2 = _SP + 2;
-  float k = 2 / sqrt(PIE * _SPP2);
-  float oneMinusK = 1 - k;
-  float3 d = _SPP2 / PIE8 * pow(NoF, _SP);  
-  float3 brdf[3];
-  BRDF
-	float3 v = 1 / ((NoL*oneMinusK + k)*(NoV*oneMinusK + k));
-  return float3(d.x * brdf[0] * v.x) + float3(d.y * brdf[1] * v.y) + float3(d.z * brdf[2] * v.z);
-}
-//Skin
-//Skin
-inline float4 SkinStandardSpecular (SurfaceOutputStandardSpecular s, float3 secondNormal, float3 thirdNormal, float3 viewDir, UnityGI gi)
+float3 BRDF (float3 diffColor, float3 specColor, float oneMinusReflectivity, float smoothness,
+    float3 normal0, float3 normal1, float3 normal2, float3 normal3, float3 viewDir,
+    UnityLight light, UnityIndirect gi)
 {
+    float perceptualRoughness = SmoothnessToPerceptualRoughness (smoothness);
+    float3 floatDir = Unity_SafeNormalize (float3(light.dir) + viewDir);
+
+    float4 nv = float4(dot(normal0, viewDir), dot(normal1, viewDir), dot(normal2, viewDir), dot(normal3, viewDir));    // This abs allow to limit artifact
+
+    float4 nl = saturate(float4(dot(normal0, light.dir), dot(normal1, light.dir), dot(normal2, light.dir), dot(normal3, light.dir)));
+    float4 nh = saturate(float4(dot(normal0, floatDir), dot(normal1, floatDir), dot(normal2, floatDir), dot(normal3, floatDir)));
+
+    float lh = saturate(dot(light.dir, floatDir));
+    BLOODCOLOR(nl);
+
+    float roughness = PerceptualRoughnessToRoughness(perceptualRoughness);
+
+    // GGX with roughtness to 0 would mean no specular at all, using max(roughness, 0.002) here to match HDrenderloop roughtness remapping.
+    roughness = max(roughness, 0.002);
+    #if defined(_SPECULARHIGHLIGHTS_OFF)
+    float specularTerm = 0.0;
+    #else
+    float4 V = Skin_GGXVisibilityTerm (nl, nv, roughness);
+    float4 D = Skin_GGXTerm (nh, roughness);
+
+    float4 allSpecularTerm = V*D * UNITY_PI;
+    float specularTerm = (allSpecularTerm.x + allSpecularTerm.y + allSpecularTerm.z + allSpecularTerm.w) * 0.25; // Torrance-Sparrow model, Fresnel is applied later
+
+#   ifdef UNITY_COLORSPACE_GAMMA
+        specularTerm = sqrt(max(1e-4h, specularTerm));
+#   endif
+
+    // specularTerm * nl can be NaN on Metal in some cases, use max() to make sure it's a sane value
+    specularTerm = max(0, specularTerm * nl);
+    #endif
+
+    #if UNITY_PASS_FORWARDADD
+     half3 color =   (diffColor * diffuse + specularTerm * FresnelTerm (specColor, lh)) * light.color;
+    #else
+    float surfaceReduction;
+#   ifdef UNITY_COLORSPACE_GAMMA
+        surfaceReduction = 1.0-0.28*roughness*perceptualRoughness;      // 1-0.28*x^3 as approximation for (1/(x^4+1))^(1/2.2) on the domain [0;1]
+#   else
+        surfaceReduction = 1.0 / (roughness*roughness + 1.0);           // fade \in [0.5;1]
+#   endif
+    half grazingTerm = saturate(smoothness + (1-oneMinusReflectivity));
+    float3 color =   diffColor * (gi.diffuse + light.color * diffuse)
+                    + specularTerm * light.color * FresnelTerm (specColor, lh)
+                    + surfaceReduction * gi.specular * FresnelLerp (specColor, grazingTerm, nv);
+    #endif
+    return color;
+}
+
+
+inline float4 Skin_LightingStandardSpecular (SurfaceOutputStandardSpecular s, float3 normal1, float3 normal2, float3 normal3, float3 viewDir, UnityGI gi)
+{
+
     // energy conservation
     float oneMinusReflectivity;
     s.Albedo = EnergyConservationBetweenDiffuseAndSpecular (s.Albedo, s.Specular, /*out*/ oneMinusReflectivity);
@@ -264,45 +316,12 @@ inline float4 SkinStandardSpecular (SurfaceOutputStandardSpecular s, float3 seco
     float outputAlpha;
     s.Albedo = PreMultiplyAlpha (s.Albedo, s.Alpha, oneMinusReflectivity, /*out*/ outputAlpha);
 
-   // half4 c = SkinBRDF (s.Albedo, s.Specular, oneMinusReflectivity, s.Smoothness, s.Normal, viewDir, gi.light, gi.indirect);
-    float3 Half = normalize(viewDir + gi.light.dir);
-    float3 NdotL = saturate(float3(dot(s.Normal, gi.light.dir), dot(secondNormal, gi.light.dir), dot(thirdNormal, gi.light.dir)));
-    float3 NdotF = saturate(float3(dot(s.Normal, Half), dot(secondNormal, Half), dot(thirdNormal, Half)));
-    float3 NdotV = float3(dot(s.Normal, viewDir), dot(secondNormal, viewDir), dot(thirdNormal, viewDir));
-    float3 floatDir = normalize (float3(gi.light.dir) + viewDir);
-    float LoH = saturate(dot(gi.light.dir, floatDir));
-    float Smoothness = s.Smoothness;
-    float3 specularColor = 0;
-    #if UNITY_PASS_FORWARDADD
-    BLOODCOLOR((NdotL.x + NdotL.y + NdotL.z) / 3)
-    diffuse *= gi.light.color * s.Albedo;
-    float4 c = float4(diffuse,1);
-    #else
-    BLOODCOLOR((NdotL.x + NdotL.y + NdotL.z) / 3)
-    diffuse = (diffuse * gi.light.color + gi.indirect.diffuse) * s.Albedo;
-    float grazingTerm = saturate(Smoothness + (1-oneMinusReflectivity));
-    float perceptualRoughness = SmoothnessToPerceptualRoughness (Smoothness);
-    float roughness = PerceptualRoughnessToRoughness(perceptualRoughness);
-    float surfaceReduction;
-#   ifdef UNITY_COLORSPACE_GAMMA
-        surfaceReduction = 1.0-0.28*roughness*perceptualRoughness;      // 1-0.28*x^3 as approximation for (1/(x^4+1))^(1/2.2) on the domain [0;1]
-#   else
-        surfaceReduction = 1.0 / (roughness*roughness + 1.0);           // fade \in [0.5;1]
-#   endif
-    float3 giSpecular = surfaceReduction * FresnelLerp (s.Specular, grazingTerm, (NdotV.x + NdotV.y + NdotV.z) / 3) * gi.indirect.specular;
-    float4 c;
-    c.rgb = diffuse + giSpecular;
-    #endif
-    specularColor += specColor(NdotV, NdotL, NdotF, s.Specular, Smoothness);
-    Smoothness *= 0.75;
-    specularColor += specColor(NdotV, NdotL, NdotF, s.Specular, Smoothness);
-    Smoothness *= 0.7;
-    specularColor += specColor(NdotV, NdotL, NdotF, s.Specular, Smoothness);
-    specularColor *= 0.11111111;
-    c.rgb += saturate(specularColor * gi.light.color);
-    c.a = outputAlpha;
+    float4 c = float4(BRDF (s.Albedo, s.Specular, oneMinusReflectivity, s.Smoothness, s.Normal, normal1, normal2, normal3, viewDir, gi.light, gi.indirect), outputAlpha);
     return c;
 }
+
+
+
 
 inline float3 SubTransparentColor(float3 lightDir, float3 viewDir, float3 lightColor, float3 pointDepth){
 	float VdotH = pow(saturate(dot(viewDir, -lightDir) + 0.5), _Power);
@@ -447,6 +466,7 @@ struct v2f_surf {
   float3 lightDir : TEXCOORD11;
   float4 screenPos : TEXCOORD12;
   float2 pack3 : TEXCOORD13;
+  float2 pack4 : TEXCOORD14;
 };
 #endif
 // with lightmaps:
@@ -474,6 +494,7 @@ struct v2f_surf {
   float3 lightDir : TEXCOORD10;
   float4 screenPos : TEXCOORD11;
   float2 pack3 : TEXCOORD12;
+  float2 pack4 : TEXCOORD13;
 };
 #endif
 float4 _MainTex_ST;
@@ -500,6 +521,7 @@ inline v2f_surf vert_surf (appdata_full v) {
 
   o.pack2 = TRANSFORM_TEX(v.texcoord, _DetailBump);
   o.pack3 = TRANSFORM_TEX(v.texcoord, _ThirdBump);
+  o.pack4 = TRANSFORM_TEX(v.texcoord, _FourthBump);
    o.tSpace0 = (float4(worldTangent.x, worldBinormal.x, worldNormal.x, worldPos.x));
   o.tSpace1 = (float4(worldTangent.y, worldBinormal.y, worldNormal.y, worldPos.y));
   o.tSpace2 = (float4(worldTangent.z, worldBinormal.z, worldNormal.z, worldPos.z));
@@ -599,6 +621,9 @@ inline float4 frag_surf (v2f_surf IN) : SV_Target {
   float3 thirdNormal = UnpackNormal(tex2D(_ThirdBump, IN.pack3));
   thirdNormal.xy *= _ThirdNormalScale;
   thirdNormal = normalize(mul(wdMatrix, thirdNormal));
+  float3 fourthNormal = UnpackNormal(tex2D(_FourthBump, IN.pack4));
+  fourthNormal.xy *= _FourthNormalScale;
+  fourthNormal = normalize(mul(wdMatrix, fourthNormal));
 
 
   // compute lighting & shadowing factor
@@ -606,11 +631,7 @@ inline float4 frag_surf (v2f_surf IN) : SV_Target {
   float4 c = 0;
 
   o.Normal = normalize(mul(wdMatrix, o.Normal));
-  float fragDepth = length(worldPos - _WorldSpaceCameraPos);
-  float backDepth = DecodeFloatRGBA(tex2Dproj(_CullFrontDepthTex, IN.screenPos)) * 255;
-  //float thickness = saturate(1 - max(backDepth - fragDepth, _MinDistance) * _Thickness);
 
-  // Setup lighting environment
   UnityGI gi;
   UNITY_INITIALIZE_OUTPUT(UnityGI, gi);
   gi.light.color = _LightColor0.rgb * atten;
@@ -650,7 +671,7 @@ inline float4 frag_surf (v2f_surf IN) : SV_Target {
   #endif
   LightingStandardSpecular_GI(o, giInput, gi);
   // realtime lighting: call lighting function
-  c += SkinStandardSpecular (o, detailNormal, thirdNormal, worldViewDir, gi);
+  c += Skin_LightingStandardSpecular (o, detailNormal, thirdNormal, fourthNormal, worldViewDir, gi);
   //float spec =  specColor(worldViewDir, lightDir, o.Normal);
   c.rgb += o.Emission;//+ transparentColor
   UNITY_APPLY_FOG(IN.fogCoord, c); // apply fog
@@ -715,21 +736,6 @@ CGPROGRAM
 #ifdef DUMMY_PREPROCESSOR_TO_WORK_AROUND_HLSL_COMPILER_LINE_HANDLING
 #endif
 
-		
-
-#ifdef UNITY_CAN_COMPILE_TESSELLATION
-
-// tessellation vertex shader
-
-
-// tessellation hull constant shader
-
-
-// tessellation hull shader
-
-
-#endif // UNITY_CAN_COMPILE_TESSELLATION
-
 
 // vertex-to-fragment interpolation data
 struct v2f_surf {
@@ -753,6 +759,7 @@ struct v2f_surf {
   float3 lightDir : TEXCOORD10;
   float4 screenPos : TEXCOORD11;
   float2 pack3 : TEXCOORD12;
+  float2 pack4 : TEXCOORD13;
 };
 float4 _MainTex_ST;
 
@@ -771,6 +778,7 @@ inline v2f_surf vert_surf (appdata_full v) {
 
   o.pack2 = TRANSFORM_TEX(v.texcoord, _DetailBump);
   o.pack3 = TRANSFORM_TEX(v.texcoord, _ThirdBump);
+  o.pack4 = TRANSFORM_TEX(v.texcoord, _FourthBump);
   float3 worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
   o.worldViewDir = (UnityWorldSpaceViewDir(worldPos));
   float3 worldNormal = UnityObjectToWorldNormal(v.normal);
@@ -853,14 +861,13 @@ inline float4 frag_surf (v2f_surf IN) : SV_Target {
   float3 thirdNormal = UnpackNormal(tex2D(_ThirdBump, IN.pack3));
   thirdNormal.xy *= _ThirdNormalScale;
   thirdNormal = normalize(mul(wdMatrix, thirdNormal));
+  float3 fourthNormal = UnpackNormal(tex2D(_FourthBump, IN.pack4));
+  fourthNormal.xy *= _FourthNormalScale;
+  fourthNormal = normalize(mul(wdMatrix, fourthNormal));
   UNITY_LIGHT_ATTENUATION(atten, IN, worldPos)
   float4 c = 0;
 
   o.Normal = normalize(mul(wdMatrix, o.Normal));
-  float fragDepth = length(worldPos - _WorldSpaceCameraPos);
-  float backDepth = DecodeFloatRGBA(tex2Dproj(_CullFrontDepthTex, IN.screenPos)) * 255;
-  //float thickness = saturate(1 - max(backDepth - fragDepth, _MinDistance) * _Thickness);
-  // Setup lighting environment
   UnityGI gi;
   UNITY_INITIALIZE_OUTPUT(UnityGI, gi);
   gi.light.color = _LightColor0.rgb * atten;
@@ -869,7 +876,7 @@ inline float4 frag_surf (v2f_surf IN) : SV_Target {
   //Didn't finish yet
  // float3 transparentColor = SubTransparentColor(lightDir, worldViewDir,  _LightColor0.rgb, thickness);
 
-  c += SkinStandardSpecular (o, detailNormal, thirdNormal, worldViewDir, gi);
+  c += Skin_LightingStandardSpecular (o, detailNormal, thirdNormal, fourthNormal, worldViewDir, gi);
   // float spec =  specColor(worldViewDir, lightDir, o.Normal);
 //  c.rgb +=  transparentColor;
   c.a = 0.0;
@@ -1030,19 +1037,6 @@ CGPROGRAM
 #line 22 ""
 #ifdef DUMMY_PREPROCESSOR_TO_WORK_AROUND_HLSL_COMPILER_LINE_HANDLING
 #endif
-
-#ifdef UNITY_CAN_COMPILE_TESSELLATION
-
-// tessellation vertex shader
-
-
-// tessellation hull constant shader
-
-// tessellation hull shader
-
-
-#endif // UNITY_CAN_COMPILE_TESSELLATION
-
 
 
 // vertex-to-fragment interpolation data

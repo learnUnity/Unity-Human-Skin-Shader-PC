@@ -23,10 +23,9 @@ struct v2f {
 
 v2f vert (appdata_base v) {
     v2f o;
-    float4 viewPos = mul(UNITY_MATRIX_MV, v.vertex);
-    o.pos = mul (UNITY_MATRIX_P, viewPos);
-    viewPos.xyz /= viewPos.w;
-    o.cmPos = viewPos.xyz;
+    float3 viewPos = UnityObjectToViewPos(v.vertex);
+    o.pos = mul (UNITY_MATRIX_P, float4(viewPos,1));
+    o.cmPos = viewPos;
 
     return o;
 }
