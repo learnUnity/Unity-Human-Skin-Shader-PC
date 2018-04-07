@@ -265,7 +265,7 @@ inline float4 SkinStandardSpecular (SurfaceOutputStandardSpecular s, float3 seco
     specularColor += specColor(NdotV, NdotL, NdotF, s.Specular, Smoothness);
     Smoothness *= 0.7;
     specularColor += specColor(NdotV, NdotL, NdotF, s.Specular, Smoothness);
-    specularColor *= 0.11111111 * FresnelTerm (s.Specular, LoH);
+    specularColor *= 0.11111111;
     c.rgb += saturate(specularColor * gi.light.color);
     c.a = outputAlpha;
     return c;
