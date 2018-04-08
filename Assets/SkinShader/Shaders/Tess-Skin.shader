@@ -14,6 +14,7 @@
 		_Glossiness ("Smoothness", Range(0,1)) = 0.5
 		_OcclusionMap("Occlusion Map", 2D) = "white"{}
 		_Occlusion("Occlusion Scale", Range(0,1)) = 1
+     _ThickMap("Thick Map", 2D) = "black"{}
 		_SpecularColor("Specular Color",Color) = (0.2,0.2,0.2,1)
 		_EmissionColor("Emission Color", Color) = (0,0,0,1)
 		_VertexScale("Vertex Scale", Range(-3,3)) = 0.1
@@ -28,6 +29,8 @@
     _FourthNormalScale("Fourth Normal Scale", float) = 1
 		_RampTex("Ramp light texture", 2D) = "white"{}
 		_BloodValue("Blood Value", Range(0.01, 1)) = 0.5
+    _Power("Power of SSS", Range(0.1,10)) = 1
+    _SSColor("SSS Color", Color) = (1,1,1,1)
     //TODO
     //Not done yet
     /*
@@ -64,40 +67,42 @@ CGINCLUDE
 #pragma shader_feature USE_DETAILNORMAL
 
 #ifdef POINT
-#define UNITY_LIGHT_ATTENUATION(destName, input, worldPos) \
+#define UNITY_LIGHT_ATTENUATION(destName, attenNoShadow, input, worldPos) \
     unityShadowCoord3 lightCoord = mul(unity_WorldToLight, unityShadowCoord4(worldPos, 1)).xyz; \
     float shadow = UNITY_SHADOW_ATTENUATION(input, worldPos); \
-    float destName = tex2D(_LightTexture0, dot(lightCoord, lightCoord).rr).UNITY_ATTEN_CHANNEL * shadow;
-
-//inline void unity_attenuation(inout float atten, inout float attenNoShadow, v2f_surf input, float3 worldPos){
+    float attenNoShadow = tex2D(_LightTexture0, dot(lightCoord, lightCoord).rr).UNITY_ATTEN_CHANNEL;\
+    float destName = attenNoShadow  * shadow;
 
 #endif
 
 #ifdef SPOT
-#define UNITY_LIGHT_ATTENUATION(destName, input, worldPos) \
+#define UNITY_LIGHT_ATTENUATION(destName, attenNoShadow, input, worldPos) \
     unityShadowCoord4 lightCoord = mul(unity_WorldToLight, unityShadowCoord4(worldPos, 1)); \
     float shadow = UNITY_SHADOW_ATTENUATION(input, worldPos); \
-    float destName = step(0,lightCoord.z) * UnitySpotCookie(lightCoord) * UnitySpotAttenuate(lightCoord.xyz) * shadow;
+    float attenNoShadow =  step(0,lightCoord.z) * UnitySpotCookie(lightCoord) * UnitySpotAttenuate(lightCoord.xyz);\
+    float destName = attenNoShadow * shadow;
 #endif
 
 #ifdef DIRECTIONAL
-    #define UNITY_LIGHT_ATTENUATION(destName, input, worldPos) float destName = UNITY_SHADOW_ATTENUATION(input, worldPos);
+    #define UNITY_LIGHT_ATTENUATION(destName, attenNoShadow, input, worldPos) float attenNoShadow = 1; float destName = UNITY_SHADOW_ATTENUATION(input, worldPos);
 #endif
 
 #ifdef POINT_COOKIE
 
-#define UNITY_LIGHT_ATTENUATION(destName, input, worldPos) \
+#define UNITY_LIGHT_ATTENUATION(destName, attenNoShadow, input, worldPos) \
     unityShadowCoord3 lightCoord = mul(unity_WorldToLight, unityShadowCoord4(worldPos, 1)).xyz; \
     float shadow = UNITY_SHADOW_ATTENUATION(input, worldPos); \
-    float destName = tex2D(_LightTextureB0, dot(lightCoord, lightCoord).rr).UNITY_ATTEN_CHANNEL * texCUBE(_LightTexture0, lightCoord).w * shadow;
+    float attenNoShadow = tex2D(_LightTextureB0, dot(lightCoord, lightCoord).rr).UNITY_ATTEN_CHANNEL * texCUBE(_LightTexture0, lightCoord).w;
+    float destName = attenNoShadow * shadow;
 #endif
 
 #ifdef DIRECTIONAL_COOKIE
 
-#define UNITY_LIGHT_ATTENUATION(destName, input, worldPos) \
+#define UNITY_LIGHT_ATTENUATION(destName, attenNoShadow, input, worldPos) \
     unityShadowCoord2 lightCoord = mul(unity_WorldToLight, unityShadowCoord4(worldPos, 1)).xy; \
     float shadow = UNITY_SHADOW_ATTENUATION(input, worldPos); \
-    float destName = tex2D(_LightTexture0, lightCoord).w * shadow;
+    float attenNoShadow = tex2D(_LightTexture0, lightCoord).w;
+    float destName = attenNoShadow * shadow;
 #endif
 
 
@@ -121,19 +126,20 @@ CGINCLUDE
 		float _VertexScale;
 		float _VertexOffset;
 		float _BloodValue;
-		float _Power;
-		float _Thickness;
+
     float _DetailNormalScale;
     float _ThirdNormalScale;
     float _FourthNormalScale;
 		float4 _SSColor;
+    float _Power;
+		float _Thickness;
+    sampler2D _ThickMap;
 		float _MinDistance;
 		sampler2D _DetailAlbedo;
 		float _AlbedoBlend;
 		sampler2D _DetailBump;
     sampler2D _ThirdBump;
     sampler2D _FourthBump;
-    sampler2D _SubNormalMaps[8];
 		float4 _DetailAlbedo_ST;
 		float4 _DetailBump_ST;
     float4 _ThirdBump_ST;
@@ -237,7 +243,8 @@ inline float4 Skin_GGXTerm (float4 NdotH, float roughness)
 
 inline float4 Pow_5 (float4 x)
 {
-    return x*x * x*x * x;
+  float4 x2 = x * x;
+  return x2 * x2 * x;
 }
 
 inline float3 FresnelLerp (float3 F0, float3 F90, float4 cosA)
@@ -627,14 +634,14 @@ inline float4 frag_surf (v2f_surf IN) : SV_Target {
 
 
   // compute lighting & shadowing factor
-  UNITY_LIGHT_ATTENUATION(atten, IN, worldPos)
+  UNITY_LIGHT_ATTENUATION(atten, attenNoShadow, IN, worldPos)
   float4 c = 0;
 
   o.Normal = normalize(mul(wdMatrix, o.Normal));
 
   UnityGI gi;
   UNITY_INITIALIZE_OUTPUT(UnityGI, gi);
-  gi.light.color = _LightColor0.rgb * atten;
+  gi.light.color = _LightColor0.rgb;
  // float3 bloodColor = BloodColor(o.Normal, lightDir) * o.Albedo * gi.light.color;
   gi.light.dir = lightDir;
   //TODO
@@ -672,8 +679,10 @@ inline float4 frag_surf (v2f_surf IN) : SV_Target {
   LightingStandardSpecular_GI(o, giInput, gi);
   // realtime lighting: call lighting function
   c += Skin_LightingStandardSpecular (o, detailNormal, thirdNormal, fourthNormal, worldViewDir, gi);
+  float3 subTrans = SubTransparentColor(lightDir, worldViewDir, _LightColor0.rgb * attenNoShadow, tex2D(_ThickMap, IN.pack0));
   //float spec =  specColor(worldViewDir, lightDir, o.Normal);
-  c.rgb += o.Emission;//+ transparentColor
+  c.rgb += o.Emission + subTrans;//+ transparentColor
+
   UNITY_APPLY_FOG(IN.fogCoord, c); // apply fog
   UNITY_OPAQUE_ALPHA(c.a);
   return c;
@@ -864,10 +873,11 @@ inline float4 frag_surf (v2f_surf IN) : SV_Target {
   float3 fourthNormal = UnpackNormal(tex2D(_FourthBump, IN.pack4));
   fourthNormal.xy *= _FourthNormalScale;
   fourthNormal = normalize(mul(wdMatrix, fourthNormal));
-  UNITY_LIGHT_ATTENUATION(atten, IN, worldPos)
+  UNITY_LIGHT_ATTENUATION(atten, attenNoShadow, IN, worldPos)
   float4 c = 0;
 
   o.Normal = normalize(mul(wdMatrix, o.Normal));
+
   UnityGI gi;
   UNITY_INITIALIZE_OUTPUT(UnityGI, gi);
   gi.light.color = _LightColor0.rgb * atten;
@@ -875,8 +885,9 @@ inline float4 frag_surf (v2f_surf IN) : SV_Target {
   //TODO
   //Didn't finish yet
  // float3 transparentColor = SubTransparentColor(lightDir, worldViewDir,  _LightColor0.rgb, thickness);
-
+  float3 subTrans = SubTransparentColor(lightDir, worldViewDir, _LightColor0.rgb * attenNoShadow, tex2D(_ThickMap, IN.pack0));
   c += Skin_LightingStandardSpecular (o, detailNormal, thirdNormal, fourthNormal, worldViewDir, gi);
+  c.rgb += subTrans;
   // float spec =  specColor(worldViewDir, lightDir, o.Normal);
 //  c.rgb +=  transparentColor;
   c.a = 0.0;
