@@ -139,8 +139,6 @@
 
 			sampler2D _OriginTex;
 			sampler2D _CameraDepthTextureWithoutSkin;
-			sampler2D _CameraDepthTexture;
-			float _Range;
 			struct appdata
 			{
 				float4 vertex : POSITION;
@@ -151,7 +149,6 @@
 			{
 				float4 vertex : SV_POSITION; 
 				float2 uv : TEXCOORD0;
-				float4 camProjection : TEXCOORD1;
 			};
 
 			inline v2f vert (appdata v)
@@ -159,15 +156,12 @@
 				v2f o;
 				o.vertex = UnityObjectToClipPos(v.vertex);
 				o.uv = v.uv;
-				o.camProjection = mul(unity_CameraInvProjection, float4(v.uv * 2 - 1, 1, 1));
 				return o;
 			}
 
 			inline float4 frag (v2f i) : SV_Target
 			{
-				float len = length((i.camProjection.xyz / i.camProjection.w));
-				return lerp(tex2D(_OriginTex, i.uv), tex2D(_MainTex, i.uv), saturate((tex2D(_CameraDepthTextureWithoutSkin, i.uv).r * _Range - Linear01Depth(tex2D(_CameraDepthTexture, i.uv).r) * len) * 1000));
-			//	return Linear01Depth(tex2D(_CameraDepthTexture, i.uv).r);
+				return lerp(tex2D(_OriginTex, i.uv), tex2D(_MainTex, i.uv), tex2D(_CameraDepthTextureWithoutSkin, i.uv).r);
 			}
 			ENDCG
 		}

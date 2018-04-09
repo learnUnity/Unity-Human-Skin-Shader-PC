@@ -9,8 +9,6 @@ public class SSSSSCamera : MonoBehaviour
 	#region MASK_SPACE
 
 	[System.NonSerialized]
-	public bool isScreenChanged;
-	[System.NonSerialized]
 	public int width;
 	[System.NonSerialized]
 	public int height;
@@ -18,14 +16,14 @@ public class SSSSSCamera : MonoBehaviour
 	Camera depthCam;
 	Shader depthShader;
 	Material mat;
+	RenderTexture depthRT;
+	int depthID;
 	[Range (0.02f, 100)]
 	public float blurRange = 20;
 
 	[Range (0, 10)]
 	public float offset = 0.5f;
-	public LayerMask skinLayer = 1 << 31;
 
-	int _RangeID;
 	// Use this for initialization
 	void Awake ()
 	{
@@ -34,43 +32,53 @@ public class SSSSSCamera : MonoBehaviour
 		cam = GetComponent<Camera> ();
 		cam.depthTextureMode |= DepthTextureMode.Depth;
 		var camG = new GameObject ("Depth Camera", typeof(Camera));
-		camG.hideFlags = HideFlags.HideAndDontSave;
 		depthCam = camG.GetComponent<Camera> ();
 		depthCam.CopyFrom (cam);
 		camG.transform.SetParent (transform);
 		camG.transform.localPosition = Vector3.zero;
 		camG.transform.localRotation = Quaternion.identity;
 		camG.transform.localScale = Vector3.one;
+		camG.hideFlags = HideFlags.HideAndDontSave;
 		depthCam.renderingPath = RenderingPath.Forward;
-		depthCam.SetReplacementShader (Shader.Find ("Hidden/Depth"), "RenderType");
+		depthCam.SetReplacementShader (Shader.Find ("Hidden/SSSSSReplace"), "RenderType");
 		depthCam.farClipPlane = blurRange;
 		depthCam.clearFlags = CameraClearFlags.Color;
-		depthCam.backgroundColor = Color.red;
-		depthCam.cullingMask = (~skinLayer) & depthCam.cullingMask;
+		depthCam.backgroundColor = Color.black;
 		depthCam.depthTextureMode = DepthTextureMode.None;
 		depthCam.enabled = false;
-		_RangeID = Shader.PropertyToID ("_Range");
+		depthID = Shader.PropertyToID ("_CameraDepthTextureWithoutSkin");
+		depthRT = new RenderTexture (Screen.width, Screen.height, 24, RenderTextureFormat.R8);
+		depthCam.targetTexture = depthRT;
 		originMapID = Shader.PropertyToID ("_OriginTex");
 		blendTexID = Shader.PropertyToID ("_BlendTex");
 		mat = new Material (Shader.Find ("Hidden/SSSSS"));
 		blendWeightID = Shader.PropertyToID ("_BlendWeight");
 		offsetID = Shader.PropertyToID ("_Offset");
 		mat.SetFloat (offsetID, offset);
-		camG.AddComponent<SSSSSDepthCamera> ().current = this;
+
+
 	}
 
 	void OnPreRender ()
 	{
-		isScreenChanged = (width != Screen.width) || (height != Screen.height);
-		Shader.SetGlobalFloat (_RangeID, blurRange);
 		depthCam.projectionMatrix = cam.projectionMatrix;
 		depthCam.Render ();
+		if ((width != Screen.width) || (height != Screen.height)) {
+			depthRT.Release ();
+			depthRT.width = Screen.width;
+			depthRT.height = Screen.height;
+			width = Screen.width;
+			height = Screen.height;
+		}
+		Shader.SetGlobalTexture (depthID, depthRT);
 	}
 
 	void OnDestroy ()
 	{
+		Destroy (depthRT);
 		if (depthCam)
 			Destroy (depthCam.gameObject);
+
 	}
 
 	#endregion

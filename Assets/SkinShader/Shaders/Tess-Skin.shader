@@ -14,7 +14,7 @@
 		_Glossiness ("Smoothness", Range(0,1)) = 0.5
 		_OcclusionMap("Occlusion Map", 2D) = "white"{}
 		_Occlusion("Occlusion Scale", Range(0,1)) = 1
-     _ThickMap("Thick Map", 2D) = "black"{}
+    _ThickMap("Thick Map", 2D) = "black"{}
 		_SpecularColor("Specular Color",Color) = (0.2,0.2,0.2,1)
 		_EmissionColor("Emission Color", Color) = (0,0,0,1)
 		_VertexScale("Vertex Scale", Range(-3,3)) = 0.1
@@ -40,7 +40,7 @@
 		_MinDistance("Min SSS transparent Distance", Range(0,2)) = 0.001*/
 	}
 	SubShader {
-		Tags { "RenderType"="Opaque" }
+		Tags { "RenderType"="SubSurfaceTess" }
 		LOD 200
 
 		
