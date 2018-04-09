@@ -14,7 +14,8 @@
 	float _Offset;
 
     inline float4 getWeightedColor(float2 uv, float2 offset){
-    	float4 c = tex2D(_MainTex, uv) * 0.324;
+		float4 originColor =  tex2D(_MainTex, uv);
+    	float4 c = originColor * 0.324;
     	float2 offsetM3 = offset * 3;
     	float2 offsetM2 = offset * 2;
     	c += tex2D(_MainTex, uv + offsetM3) * 0.0205;
@@ -23,7 +24,7 @@
     	c += tex2D(_MainTex, uv - offsetM3) * 0.0205;
     	c += tex2D(_MainTex, uv - offsetM2) * 0.0855;
     	c += tex2D(_MainTex, uv - offset) * 0.232;
-    	return c;
+    	return lerp(originColor, c, originColor.a);
     }
     			struct v2f_mg
 			{
@@ -31,13 +32,13 @@
 				float4 vertex : SV_POSITION;
 				float2 offset : TEXCOORD1;
 			};
-    			inline float4 frag_blur (v2f_mg i) : SV_Target
+    		inline float4 frag_blur (v2f_mg i) : SV_Target
 			{
 				return getWeightedColor(i.uv, i.offset);
 			}
 
 	ENDCG
-	//0. vert 1. hori 2. blend 3. mask
+	//0. vert 1. hori 2. blend 3. mask 4,5 downsample 6 add
 		// No culling or depth
 		Cull Off ZWrite Off ZTest Always
 
@@ -130,7 +131,7 @@
 			}
 			ENDCG
 		}
-
+		
 		Pass{
 		//Mask
 			CGPROGRAM
@@ -165,7 +166,7 @@
 			}
 			ENDCG
 		}
-
+		
 		Pass
 		{
 		//DownSample
@@ -244,6 +245,41 @@
 			  	c += tex2D(_MainTex, i.uv - i.offset.xy);
 			  	c += tex2D(_MainTex, i.uv - i.offset.zw);
     			return c / 4;
+			}
+			ENDCG
+		}
+
+		
+		Pass{
+		//Add
+			CGPROGRAM
+			#pragma vertex vert
+			#pragma fragment frag
+
+			sampler2D _OriginTex;
+			struct appdata
+			{
+				float4 vertex : POSITION;
+				float2 uv : TEXCOORD0;
+			};
+
+			struct v2f
+			{
+				float4 vertex : SV_POSITION; 
+				float2 uv : TEXCOORD0;
+			};
+
+			inline v2f vert (appdata v)
+			{
+				v2f o;
+				o.vertex = UnityObjectToClipPos(v.vertex);
+				o.uv = v.uv;
+				return o;
+			}
+
+			inline float4 frag (v2f i) : SV_Target
+			{
+				return tex2D(_OriginTex, i.uv) + tex2D(_MainTex, i.uv);
 			}
 			ENDCG
 		}

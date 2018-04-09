@@ -1,10 +1,15 @@
-﻿Shader "MStudio/Skin" {
+﻿Shader "MStudio/Tessellation Skin Specular" {
 	Properties {
+		_MinDist("Tess Min Distance", float) = 10
+		_MaxDist("Tess Max Distance", float) = 25
+		_Tessellation("Tessellation", Range(1,63)) = 1
+		_Phong ("Phong Strengh", Range(0,1)) = 0.5
 		_Color ("Color", Color) = (1,1,1,1)
 		_MainTex ("Albedo (RGB)", 2D) = "white" {}
 		_BumpMap("Normal Map", 2D) = "bump" {}
 		_NormalScale("Normal Scale", float) = 1
 		_SpecularMap("Specular Map", 2D) = "white"{}
+		_HeightMap("Vertex Map", 2D) = "black"{}
 		//_HeightScale("Height Scale", Range(-4,4)) = 1
 		_Glossiness ("Smoothness", Range(0,1)) = 0.5
 		_OcclusionMap("Occlusion Map", 2D) = "white"{}
@@ -12,6 +17,8 @@
     _ThickMap("Thick Map", 2D) = "black"{}
 		_SpecularColor("Specular Color",Color) = (0.2,0.2,0.2,1)
 		_EmissionColor("Emission Color", Color) = (0,0,0,1)
+		_VertexScale("Vertex Scale", Range(-3,3)) = 0.1
+		_VertexOffset("Vertex Offset", float) = 0
 		_DetailAlbedo("Detail Albedo(RGB)", 2D) = "black"{}
 		_AlbedoBlend("Albedo Blend Rate", Range(0,1)) = 0.3
 		_DetailBump("Secondary Normal(RGB)", 2D) = "bump"{}
@@ -24,9 +31,16 @@
 		_BloodValue("Blood Value", Range(0.01, 1)) = 0.5
     _Power("Power of SSS", Range(0.1,10)) = 1
     _SSColor("SSS Color", Color) = (1,1,1,1)
+    //TODO
+    //Not done yet
+    /*
+		_Power("Power of SSS", Range(0.1,10)) = 1
+		_SSColor("SSS Color", Color) = (1,1,1,1)
+		_Thickness("Thickness", float) = 1
+		_MinDistance("Min SSS transparent Distance", Range(0,2)) = 0.001*/
 	}
 	SubShader {
-		Tags { "RenderType"="Opaque" }
+		Tags { "RenderType"="SubSurfaceTess" }
 		LOD 200
 
 		
@@ -34,14 +48,7 @@
 	// Surface shader code generated out of a CGPROGRAM block:
 CGINCLUDE
 
-#include "HLSLSupport.cginc"
-#include "UnityShaderVariables.cginc"
-#include "UnityShaderUtilities.cginc"
-#include "UnityCG.cginc"
-#include "Lighting.cginc"
-#include "UnityPBSLighting.cginc"
-#include "UnityMetaPass.cginc"
-#include "AutoLight.cginc"
+
 
 #pragma shader_feature USE_NORMAL
 #pragma shader_feature USE_SPECULAR
@@ -51,248 +58,7 @@ CGINCLUDE
 #pragma shader_feature USE_ALBEDO
 #pragma shader_feature USE_DETAILALBEDO
 #pragma shader_feature USE_DETAILNORMAL
-
-#ifdef POINT
-#define UNITY_LIGHT_ATTENUATION(destName, attenNoShadow, input, worldPos) \
-    unityShadowCoord3 lightCoord = mul(unity_WorldToLight, unityShadowCoord4(worldPos, 1)).xyz; \
-    float shadow = UNITY_SHADOW_ATTENUATION(input, worldPos); \
-    float attenNoShadow = tex2D(_LightTexture0, dot(lightCoord, lightCoord).rr).UNITY_ATTEN_CHANNEL;\
-    float destName = attenNoShadow  * shadow;
-
-#endif
-
-#ifdef SPOT
-#define UNITY_LIGHT_ATTENUATION(destName, attenNoShadow, input, worldPos) \
-    unityShadowCoord4 lightCoord = mul(unity_WorldToLight, unityShadowCoord4(worldPos, 1)); \
-    float shadow = UNITY_SHADOW_ATTENUATION(input, worldPos); \
-    float attenNoShadow =  step(0,lightCoord.z) * UnitySpotCookie(lightCoord) * UnitySpotAttenuate(lightCoord.xyz);\
-    float destName = attenNoShadow * shadow;
-#endif
-
-#ifdef DIRECTIONAL
-    #define UNITY_LIGHT_ATTENUATION(destName, attenNoShadow, input, worldPos) float attenNoShadow = 1; float destName = UNITY_SHADOW_ATTENUATION(input, worldPos);
-#endif
-
-#ifdef POINT_COOKIE
-
-#define UNITY_LIGHT_ATTENUATION(destName, attenNoShadow, input, worldPos) \
-    unityShadowCoord3 lightCoord = mul(unity_WorldToLight, unityShadowCoord4(worldPos, 1)).xyz; \
-    float shadow = UNITY_SHADOW_ATTENUATION(input, worldPos); \
-    float attenNoShadow = tex2D(_LightTextureB0, dot(lightCoord, lightCoord).rr).UNITY_ATTEN_CHANNEL * texCUBE(_LightTexture0, lightCoord).w;
-    float destName = attenNoShadow * shadow;
-#endif
-
-#ifdef DIRECTIONAL_COOKIE
-
-#define UNITY_LIGHT_ATTENUATION(destName, attenNoShadow, input, worldPos) \
-    unityShadowCoord2 lightCoord = mul(unity_WorldToLight, unityShadowCoord4(worldPos, 1)).xy; \
-    float shadow = UNITY_SHADOW_ATTENUATION(input, worldPos); \
-    float attenNoShadow = tex2D(_LightTexture0, lightCoord).w;
-    float destName = attenNoShadow * shadow;
-#endif
-
-
-
-
-		struct Input {
-			float2 uv_MainTex;
-			#if USE_DETAILALBEDO
-			float2 uv_DetailAlbedo;
-			#endif
-		};
-		
-        float4 _SpecularColor;
-        float4 _EmissionColor;
-
-		float _NormalScale;
-		float _Occlusion;
-
-		float _BloodValue;
-		float _Power;
-		float _Thickness;
-    sampler2D _ThickMap;
-    float _DetailNormalScale;
-    float _ThirdNormalScale;
-    float _FourthNormalScale;
-
-		sampler2D _DetailAlbedo;
-		float _AlbedoBlend;
-		sampler2D _DetailBump;
-    sampler2D _ThirdBump;
-    sampler2D _FourthBump;
-
-		float4 _DetailAlbedo_ST;
-		float4 _DetailBump_ST;
-    float4 _ThirdBump_ST;
-    float4 _FourthBump_ST;
-    float4 _SSColor;
-		sampler2D _BumpMap;
-		sampler2D _SpecularMap;
-		sampler2D _OcclusionMap;
-		sampler2D _RampTex;
-		sampler2D _MainTex;
-		half _Glossiness;
-		float4 _Color;
-
-		inline void surf (Input IN, inout SurfaceOutputStandardSpecular o) {
-			// Albedo comes from a texture tinted by color
-			float2 uv = IN.uv_MainTex;// - parallax_mapping(IN.uv_MainTex,IN.viewDir);
-			#if USE_ALBEDO
-			float4 c = tex2D (_MainTex, uv) * _Color;
-
-			#if USE_DETAILALBEDO
-			float4 dA = tex2D(_DetailAlbedo, IN.uv_DetailAlbedo);
-			c.rgb = lerp(c.rgb, dA.rgb, _AlbedoBlend);
-			#endif
-			o.Albedo = c.rgb;
-			o.Alpha = c.a;
-			#else
-			#if USE_DETAILALBEDO
-			float4 dA = tex2D(_DetailAlbedo, IN.uv_DetailAlbedo);
-			o.Albedo.rgb = lerp(1, dA.rgb, _AlbedoBlend) * _Color;
-			#else
-			o.Albedo = _Color.rgb;
-			o.Alpha = _Color.a;
-			#endif
-			#endif
-
-			#if USE_OCCLUSION
-			o.Occlusion = lerp(1, tex2D(_OcclusionMap, IN.uv_MainTex).r, _Occlusion);
-			#else
-			o.Occlusion = 1;
-			#endif
-
-			#if USE_SPECULAR
-			float4 spec = tex2D(_SpecularMap, IN.uv_MainTex);
-			o.Specular = _SpecularColor  * spec.rgb;
-			o.Smoothness = _Glossiness * spec.a;
-			#else
-			o.Specular = _SpecularColor;
-			o.Smoothness = _Glossiness;
-			#endif
-
-
-			#if USE_NORMAL
-			o.Normal = UnpackNormal(tex2D(_BumpMap, IN.uv_MainTex));
-			o.Normal.xy *= _NormalScale;
-			#else
-			o.Normal = float3(0,0,1);
-			#endif
-			#if UNITY_PASS_FORWARDBASE
-			o.Emission = _EmissionColor;
-			#endif
-		}
-
-
-inline float4 Skin_GGXVisibilityTerm (float4 NdotL, float4 NdotV, float roughness)
-{
-    float a = roughness;
-    float4 lambdaV = NdotL * (NdotV * (1 - a) + a);
-    float4 lambdaL = NdotV * (NdotL * (1 - a) + a);
-    return 0.5f / (lambdaV + lambdaL + 1e-5f);
-}
-
-inline float4 Skin_GGXTerm (float4 NdotH, float roughness)
-{
-    float a2 = roughness * roughness;
-    float4 d = (NdotH * a2 - NdotH) * NdotH + 1.0f; // 2 mad
-    return UNITY_INV_PI * a2 / (d * d + 1e-7f); // This function is not intended to be running on Mobile,
-                                            // therefore epsilon is smaller than what can be represented by half
-}
-
-inline float4 Pow_5 (float4 x)
-{
-    return x*x * x*x * x;
-}
-
-inline float3 FresnelLerp (float3 F0, float3 F90, float4 cosA)
-{
-    float4 t = Pow_5 (1 - cosA);   // ala Schlick interpoliation
-    return lerp (F0, F90, (t.x + t.y + t.z + t.w) * 0.25);
-}
-
-#define BLOODCOLOR(NdotL)\
-	float4 NdotLInDiff = NdotL * 0.5 + 0.5;\
-	float3 diffuse = (tex2D(_RampTex, float2(NdotLInDiff.x, _BloodValue)) + tex2D(_RampTex, float2(NdotLInDiff.y, _BloodValue)) + tex2D(_RampTex, float2(NdotLInDiff.z, _BloodValue)) + tex2D(_RampTex, float2(NdotLInDiff.w, _BloodValue))).xyz * 0.25;
-
-float3 BRDF (float3 diffColor, float3 specColor, float oneMinusReflectivity, float smoothness,
-    float3 normal0, float3 normal1, float3 normal2, float3 normal3, float3 viewDir,
-    UnityLight light, UnityIndirect gi)
-{
-    float perceptualRoughness = SmoothnessToPerceptualRoughness (smoothness);
-    float3 floatDir = Unity_SafeNormalize (float3(light.dir) + viewDir);
-
-    float4 nv = float4(dot(normal0, viewDir), dot(normal1, viewDir), dot(normal2, viewDir), dot(normal3, viewDir));    // This abs allow to limit artifact
-
-    float4 nl = saturate(float4(dot(normal0, light.dir), dot(normal1, light.dir), dot(normal2, light.dir), dot(normal3, light.dir)));
-    float4 nh = saturate(float4(dot(normal0, floatDir), dot(normal1, floatDir), dot(normal2, floatDir), dot(normal3, floatDir)));
-
-    float lh = saturate(dot(light.dir, floatDir));
-    BLOODCOLOR(nl);
-
-    float roughness = PerceptualRoughnessToRoughness(perceptualRoughness);
-
-    // GGX with roughtness to 0 would mean no specular at all, using max(roughness, 0.002) here to match HDrenderloop roughtness remapping.
-    roughness = max(roughness, 0.002);
-    #if defined(_SPECULARHIGHLIGHTS_OFF)
-    float specularTerm = 0.0;
-    #else
-    float4 V = Skin_GGXVisibilityTerm (nl, nv, roughness);
-    float4 D = Skin_GGXTerm (nh, roughness);
-
-    float4 allSpecularTerm = V*D * UNITY_PI;
-    float specularTerm = (allSpecularTerm.x + allSpecularTerm.y + allSpecularTerm.z + allSpecularTerm.w) * 0.25; // Torrance-Sparrow model, Fresnel is applied later
-
-#   ifdef UNITY_COLORSPACE_GAMMA
-        specularTerm = sqrt(max(1e-4h, specularTerm));
-#   endif
-
-    // specularTerm * nl can be NaN on Metal in some cases, use max() to make sure it's a sane value
-    specularTerm = max(0, specularTerm * nl);
-    #endif
-
-    #if UNITY_PASS_FORWARDADD
-     half3 color =   (diffColor * diffuse + specularTerm * FresnelTerm (specColor, lh)) * light.color;
-    #else
-    float surfaceReduction;
-#   ifdef UNITY_COLORSPACE_GAMMA
-        surfaceReduction = 1.0-0.28*roughness*perceptualRoughness;      // 1-0.28*x^3 as approximation for (1/(x^4+1))^(1/2.2) on the domain [0;1]
-#   else
-        surfaceReduction = 1.0 / (roughness*roughness + 1.0);           // fade \in [0.5;1]
-#   endif
-    half grazingTerm = saturate(smoothness + (1-oneMinusReflectivity));
-    float3 color =   diffColor * (gi.diffuse + light.color * diffuse)
-                    + specularTerm * light.color * FresnelTerm (specColor, lh)
-                    + surfaceReduction * gi.specular * FresnelLerp (specColor, grazingTerm, nv);
-    #endif
-    return color;
-}
-
-
-inline float4 Skin_LightingStandardSpecular (SurfaceOutputStandardSpecular s, float3 normal1, float3 normal2, float3 normal3, float3 viewDir, UnityGI gi)
-{
-
-    // energy conservation
-    float oneMinusReflectivity;
-    s.Albedo = EnergyConservationBetweenDiffuseAndSpecular (s.Albedo, s.Specular, /*out*/ oneMinusReflectivity);
-
-    // shader relies on pre-multiply alpha-blend (_SrcBlend = One, _DstBlend = OneMinusSrcAlpha)
-    // this is necessary to handle transparency in physically correct way - only diffuse component gets affected by alpha
-    float outputAlpha;
-    s.Albedo = PreMultiplyAlpha (s.Albedo, s.Alpha, oneMinusReflectivity, /*out*/ outputAlpha);
-
-    float4 c = float4(BRDF (s.Albedo, s.Specular, oneMinusReflectivity, s.Smoothness, s.Normal, normal1, normal2, normal3, viewDir, gi.light, gi.indirect), outputAlpha);
-    return c;
-}
-
-
-
-
-inline float3 SubTransparentColor(float3 lightDir, float3 viewDir, float3 lightColor, float3 pointDepth){
-	float VdotH = pow(saturate(dot(viewDir, -lightDir) + 0.5), _Power);
-	return lightColor * VdotH * pointDepth * _SSColor;
-}
-
+#include "SkinInclude.cginc"
 ENDCG
 	// ---- forward rendering base pass:
 	Pass {
@@ -301,9 +67,11 @@ ENDCG
 
 CGPROGRAM
 // compile directives
-#pragma vertex vert_surf
+#pragma vertex tessvert_surf
 #pragma fragment frag_surf
-#pragma target 3.0
+#pragma hull hs_surf
+#pragma domain ds_surf
+#pragma target 5.0
 
 #pragma multi_compile_fog
 #pragma multi_compile_fwdbase
@@ -461,6 +229,38 @@ inline v2f_surf vert_surf (appdata_full v) {
   return o;
 }
 
+#ifdef UNITY_CAN_COMPILE_TESSELLATION
+
+// tessellation domain shader
+[UNITY_domain("tri")]
+inline v2f_surf ds_surf (UnityTessellationFactors tessFactors, const OutputPatch<InternalTessInterp_appdata_full,3> vi, float3 bary : SV_DomainLocation) {
+  appdata_full v;
+  v.vertex = vi[0].vertex*bary.x + vi[1].vertex*bary.y + vi[2].vertex*bary.z;
+
+  #if USE_PHONG
+  float3 pp[3];
+  pp[0] = v.vertex.xyz - vi[0].normal * (dot(v.vertex.xyz, vi[0].normal) - dot(vi[0].vertex.xyz, vi[0].normal));
+  pp[1] = v.vertex.xyz - vi[1].normal * (dot(v.vertex.xyz, vi[1].normal) - dot(vi[1].vertex.xyz, vi[1].normal));
+  pp[2] = v.vertex.xyz - vi[2].normal * (dot(v.vertex.xyz, vi[2].normal) - dot(vi[2].vertex.xyz, vi[2].normal));
+  v.vertex.xyz = _Phong * (pp[0]*bary.x + pp[1]*bary.y + pp[2]*bary.z) + (1.0f-_Phong) * v.vertex.xyz;
+  #endif
+
+  v.tangent = vi[0].tangent*bary.x + vi[1].tangent*bary.y + vi[2].tangent*bary.z;
+  v.normal = vi[0].normal*bary.x + vi[1].normal*bary.y + vi[2].normal*bary.z;
+  v.texcoord = vi[0].texcoord*bary.x + vi[1].texcoord*bary.y + vi[2].texcoord*bary.z;
+  v.texcoord1 = vi[0].texcoord1*bary.x + vi[1].texcoord1*bary.y + vi[2].texcoord1*bary.z;
+  v.texcoord2 = vi[0].texcoord2*bary.x + vi[1].texcoord2*bary.y + vi[2].texcoord2*bary.z;
+  v.texcoord3 = 0;
+  v.color = 0;
+  #if USE_VERTEX
+  vert(v);
+  #endif
+  v2f_surf o = vert_surf (v);
+  return o;
+}
+
+#endif // UNITY_CAN_COMPILE_TESSELLATION
+
 
 // fragment shader
 inline float4 frag_surf (v2f_surf IN) : SV_Target {
@@ -508,10 +308,6 @@ inline float4 frag_surf (v2f_surf IN) : SV_Target {
   gi.light.color = _LightColor0.rgb;
  // float3 bloodColor = BloodColor(o.Normal, lightDir) * o.Albedo * gi.light.color;
   gi.light.dir = lightDir;
-  //TODO
-  //Didn't finish yet
-  //float3 transparentColor = SubTransparentColor(lightDir, worldViewDir,  _LightColor0.rgb, thickness);
-  // Call GI (lightmaps/SH/reflections) lighting function
   UnityGIInput giInput;
   UNITY_INITIALIZE_OUTPUT(UnityGIInput, giInput);
   giInput.light = gi.light;
@@ -542,10 +338,9 @@ inline float4 frag_surf (v2f_surf IN) : SV_Target {
   #endif
   LightingStandardSpecular_GI(o, giInput, gi);
   // realtime lighting: call lighting function
-  c += Skin_LightingStandardSpecular (o, detailNormal, thirdNormal, fourthNormal, worldViewDir, gi);
-  float3 subTrans = SubTransparentColor(lightDir, worldViewDir, _LightColor0.rgb * attenNoShadow, tex2D(_ThickMap, IN.pack0));
+  c += Skin_Specular (o, detailNormal, thirdNormal, fourthNormal, worldViewDir, gi);
   //float spec =  specColor(worldViewDir, lightDir, o.Normal);
-  c.rgb += o.Emission + subTrans;//+ transparentColor
+  c.rgb += o.Emission;//+ transparentColor
 
   UNITY_APPLY_FOG(IN.fogCoord, c); // apply fog
   UNITY_OPAQUE_ALPHA(c.a);
@@ -567,9 +362,11 @@ ENDCG
 
 CGPROGRAM
 // compile directives
-#pragma vertex vert_surf
+#pragma vertex tessvert_surf
 #pragma fragment frag_surf
-#pragma target 3.0
+#pragma hull hs_surf
+#pragma domain ds_surf
+#pragma target 5.0
 
 #pragma multi_compile_fog
 #pragma skip_variants INSTANCING_ON
@@ -607,7 +404,6 @@ CGPROGRAM
 #ifdef DUMMY_PREPROCESSOR_TO_WORK_AROUND_HLSL_COMPILER_LINE_HANDLING
 #endif
 
-		
 
 // vertex-to-fragment interpolation data
 struct v2f_surf {
@@ -672,6 +468,37 @@ inline v2f_surf vert_surf (appdata_full v) {
   return o;
 }
 
+#ifdef UNITY_CAN_COMPILE_TESSELLATION
+
+// tessellation domain shader
+[UNITY_domain("tri")]
+inline v2f_surf ds_surf (UnityTessellationFactors tessFactors, const OutputPatch<InternalTessInterp_appdata_full,3> vi, float3 bary : SV_DomainLocation) {
+  appdata_full v;
+  v.vertex = vi[0].vertex*bary.x + vi[1].vertex*bary.y + vi[2].vertex*bary.z;
+    #if USE_PHONG
+  float3 pp[3];
+  pp[0] = v.vertex.xyz - vi[0].normal * (dot(v.vertex.xyz, vi[0].normal) - dot(vi[0].vertex.xyz, vi[0].normal));
+  pp[1] = v.vertex.xyz - vi[1].normal * (dot(v.vertex.xyz, vi[1].normal) - dot(vi[1].vertex.xyz, vi[1].normal));
+  pp[2] = v.vertex.xyz - vi[2].normal * (dot(v.vertex.xyz, vi[2].normal) - dot(vi[2].vertex.xyz, vi[2].normal));
+  v.vertex.xyz = _Phong * (pp[0]*bary.x + pp[1]*bary.y + pp[2]*bary.z) + (1.0f-_Phong) * v.vertex.xyz;
+  #endif
+  v.tangent = vi[0].tangent*bary.x + vi[1].tangent*bary.y + vi[2].tangent*bary.z;
+  v.normal = vi[0].normal*bary.x + vi[1].normal*bary.y + vi[2].normal*bary.z;
+  v.texcoord = vi[0].texcoord*bary.x + vi[1].texcoord*bary.y + vi[2].texcoord*bary.z;
+  v.texcoord1 = vi[0].texcoord1*bary.x + vi[1].texcoord1*bary.y + vi[2].texcoord1*bary.z;
+  v.texcoord2 = 0;
+  v.texcoord3 = 0;
+  v.color = 0;
+    #if USE_VERTEX
+  vert(v);
+  #endif
+  v2f_surf o = vert_surf (v);
+  return o;
+}
+
+#endif // UNITY_CAN_COMPILE_TESSELLATION
+
+
 // fragment shader
 inline float4 frag_surf (v2f_surf IN) : SV_Target {
   UNITY_SETUP_INSTANCE_ID(IN);
@@ -716,10 +543,8 @@ inline float4 frag_surf (v2f_surf IN) : SV_Target {
   gi.light.dir = lightDir;
   //TODO
   //Didn't finish yet
- // float3 transparentColor = SubTransparentColor(lightDir, worldViewDir,  _LightColor0.rgb, thickness);
-  float3 subTrans = SubTransparentColor(lightDir, worldViewDir, _LightColor0.rgb * attenNoShadow, tex2D(_ThickMap, IN.pack0));
-  c += Skin_LightingStandardSpecular (o, detailNormal, thirdNormal, fourthNormal, worldViewDir, gi);
-  c.rgb += subTrans;
+  c += Skin_Specular (o, detailNormal, thirdNormal, fourthNormal, worldViewDir, gi);
+
   // float spec =  specColor(worldViewDir, lightDir, o.Normal);
 //  c.rgb +=  transparentColor;
   c.a = 0.0;
@@ -735,25 +560,26 @@ inline float4 frag_surf (v2f_surf IN) : SV_Target {
 ENDCG
 
 }
-
-Pass {
+	Pass {
 		Name "ShadowCaster"
 		Tags { "LightMode" = "ShadowCaster" }
-		ZWrite On ZTest Less
+		ZWrite On ZTest LEqual
 
 CGPROGRAM
 // compile directives
-#pragma vertex vert_surf
-#pragma fragment frag_surf
 
-#pragma target 3.0
+#pragma vertex tessvert_surf_shadowCaster
+#pragma fragment frag_surf
+#pragma hull hs_surf_shadow
+#pragma domain ds_surf
+
+#pragma target 5.0
 
 #pragma skip_variants FOG_LINEAR FOG_EXP FOG_EXP2
 #pragma multi_compile_shadowcaster
 
 // -------- variant for: <when no other keywords are defined>
 #if !defined(INSTANCING_ON)
-
 
 #define INTERNAL_DATA
 #define WorldReflectionVector(data,normal) data.worldRefl
@@ -766,6 +592,14 @@ CGPROGRAM
 
 struct v2f_surf {
   V2F_SHADOW_CASTER;
+  UNITY_VERTEX_INPUT_INSTANCE_ID
+  UNITY_VERTEX_OUTPUT_STEREO
+};
+
+struct InternalTessInterp_appdata_base {
+  float4 vertex : INTERNALTESSPOS;
+  float3 normal : NORMAL;
+  float4 texcoord : TEXCOORD0;
 };
 
 // vertex shader
@@ -773,6 +607,59 @@ inline v2f_surf vert_surf (appdata_base v) {
   v2f_surf o;
   UNITY_INITIALIZE_OUTPUT(v2f_surf,o);
   TRANSFER_SHADOW_CASTER_NORMALOFFSET(o)
+  return o;
+}
+
+inline UnityTessellationFactors hsconst_surf_shadow (InputPatch<InternalTessInterp_appdata_base,3> v) {
+   UnityTessellationFactors o;
+  float3 tf = (tessDist(v[0].vertex, v[1].vertex, v[2].vertex));
+  o.edge[0] = tf.x;
+  o.edge[1] = tf.y;
+  o.edge[2] = tf.z;
+  o.inside = (tf.x + tf.y + tf.z) * 0.33333333;
+  return o;
+
+}
+
+
+[UNITY_domain("tri")]
+[UNITY_partitioning("fractional_odd")]
+[UNITY_outputtopology("triangle_cw")]
+[UNITY_patchconstantfunc("hsconst_surf_shadow")]
+[UNITY_outputcontrolpoints(3)]
+inline InternalTessInterp_appdata_base hs_surf_shadow (InputPatch<InternalTessInterp_appdata_base,3> v, uint id : SV_OutputControlPointID) {
+  return v[id];
+}
+
+inline InternalTessInterp_appdata_base tessvert_surf_shadowCaster (appdata_base v) {
+  InternalTessInterp_appdata_base o;
+  o.vertex = v.vertex;
+  o.normal = v.normal;
+  o.texcoord = v.texcoord;
+  return o;
+}
+
+inline void vert_shadow(inout appdata_base v){
+	v.vertex.xyz += v.normal *( (tex2Dlod(_HeightMap, v.texcoord).r + _VertexOffset) * _VertexScale);
+}
+
+[UNITY_domain("tri")]
+inline v2f_surf ds_surf (UnityTessellationFactors tessFactors, const OutputPatch<InternalTessInterp_appdata_base,3> vi, float3 bary : SV_DomainLocation) {
+  appdata_base v;
+  v.vertex = vi[0].vertex*bary.x + vi[1].vertex*bary.y + vi[2].vertex*bary.z;
+    #if USE_PHONG
+  float3 pp[3];
+  pp[0] = v.vertex.xyz - vi[0].normal * (dot(v.vertex.xyz, vi[0].normal) - dot(vi[0].vertex.xyz, vi[0].normal));
+  pp[1] = v.vertex.xyz - vi[1].normal * (dot(v.vertex.xyz, vi[1].normal) - dot(vi[1].vertex.xyz, vi[1].normal));
+  pp[2] = v.vertex.xyz - vi[2].normal * (dot(v.vertex.xyz, vi[2].normal) - dot(vi[2].vertex.xyz, vi[2].normal));
+  v.vertex.xyz = _Phong * (pp[0]*bary.x + pp[1]*bary.y + pp[2]*bary.z) + (1.0f-_Phong) * v.vertex.xyz;
+  #endif
+  v.normal = vi[0].normal*bary.x + vi[1].normal*bary.y + vi[2].normal*bary.z;
+  v.texcoord = vi[0].texcoord*bary.x + vi[1].texcoord*bary.y + vi[2].texcoord*bary.z;
+    #if USE_VERTEX
+  vert_shadow(v);
+  #endif
+  v2f_surf o = vert_surf (v);
   return o;
 }
 
@@ -795,9 +682,11 @@ ENDCG
 
 CGPROGRAM
 // compile directives
-#pragma vertex vert_surf
+#pragma vertex tessvert_surf
 #pragma fragment frag_surf
-#pragma target 3.0
+#pragma hull hs_surf
+#pragma domain ds_surf
+#pragma target 5.0
 
 #pragma skip_variants FOG_LINEAR FOG_EXP FOG_EXP2
 #pragma skip_variants INSTANCING_ON
@@ -846,6 +735,37 @@ inline v2f_surf vert_surf (appdata_full v) {
    
   return o;
 }
+
+#ifdef UNITY_CAN_COMPILE_TESSELLATION
+
+// tessellation domain shader
+[UNITY_domain("tri")]
+inline v2f_surf ds_surf (UnityTessellationFactors tessFactors, const OutputPatch<InternalTessInterp_appdata_full,3> vi, float3 bary : SV_DomainLocation) {
+  appdata_full v;
+  v.vertex = vi[0].vertex*bary.x + vi[1].vertex*bary.y + vi[2].vertex*bary.z;
+    #if USE_PHONG
+  float3 pp[3];
+  pp[0] = v.vertex.xyz - vi[0].normal * (dot(v.vertex.xyz, vi[0].normal) - dot(vi[0].vertex.xyz, vi[0].normal));
+  pp[1] = v.vertex.xyz - vi[1].normal * (dot(v.vertex.xyz, vi[1].normal) - dot(vi[1].vertex.xyz, vi[1].normal));
+  pp[2] = v.vertex.xyz - vi[2].normal * (dot(v.vertex.xyz, vi[2].normal) - dot(vi[2].vertex.xyz, vi[2].normal));
+  v.vertex.xyz = _Phong * (pp[0]*bary.x + pp[1]*bary.y + pp[2]*bary.z) + (1.0f-_Phong) * v.vertex.xyz;
+  #endif
+  v.tangent = vi[0].tangent*bary.x + vi[1].tangent*bary.y + vi[2].tangent*bary.z;
+  v.normal = vi[0].normal*bary.x + vi[1].normal*bary.y + vi[2].normal*bary.z;
+  v.texcoord = vi[0].texcoord*bary.x + vi[1].texcoord*bary.y + vi[2].texcoord*bary.z;
+  v.texcoord1 = vi[0].texcoord1*bary.x + vi[1].texcoord1*bary.y + vi[2].texcoord1*bary.z;
+  v.texcoord2 = vi[0].texcoord2*bary.x + vi[1].texcoord2*bary.y + vi[2].texcoord2*bary.z;
+  v.texcoord3 = 0;
+  v.color = 0;
+   #if USE_VERTEX
+  vert(v);
+  #endif
+  v2f_surf o = vert_surf (v);
+  return o;
+}
+
+#endif // UNITY_CAN_COMPILE_TESSELLATION
+
 
 // fragment shader
 inline float4 frag_surf (v2f_surf IN) : SV_Target {

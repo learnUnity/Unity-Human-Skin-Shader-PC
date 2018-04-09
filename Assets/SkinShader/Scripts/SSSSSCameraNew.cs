@@ -4,7 +4,7 @@ using UnityEngine;
 using UnityEngine.Rendering;
 
 [RequireComponent (typeof(Camera))]
-public class SSSSSCamera : MonoBehaviour
+public class SSSSSCameraNew : MonoBehaviour
 {
 	#region MASK_SPACE
 
@@ -40,14 +40,14 @@ public class SSSSSCamera : MonoBehaviour
 		camG.transform.localScale = Vector3.one;
 		camG.hideFlags = HideFlags.HideAndDontSave;
 		depthCam.renderingPath = RenderingPath.Forward;
-		depthCam.SetReplacementShader (Shader.Find ("Hidden/SSSSSReplaceMask"), "RenderType");
+		depthCam.SetReplacementShader (Shader.Find ("Hidden/SSSSSReplace"), "RenderType");
 		depthCam.farClipPlane = blurRange;
 		depthCam.clearFlags = CameraClearFlags.Color;
-		depthCam.backgroundColor = Color.black;
+		depthCam.backgroundColor = new Color (0, 0, 0, 0);
 		depthCam.depthTextureMode = DepthTextureMode.None;
 		depthCam.enabled = false;
 		depthID = Shader.PropertyToID ("_CameraDepthTextureWithoutSkin");
-		depthRT = new RenderTexture (Screen.width, Screen.height, 24, RenderTextureFormat.R8);
+		depthRT = new RenderTexture (Screen.width, Screen.height, 24, RenderTextureFormat.ARGBHalf);
 		depthCam.targetTexture = depthRT;
 		originMapID = Shader.PropertyToID ("_OriginTex");
 		blendTexID = Shader.PropertyToID ("_BlendTex");
@@ -60,7 +60,8 @@ public class SSSSSCamera : MonoBehaviour
 	}
 
 	void OnPreRender ()
-	{
+	{	
+		//depthCam.projectionMatrix = cam.projectionMatrix;
 		depthCam.Render ();
 		if ((width != Screen.width) || (height != Screen.height)) {
 			depthRT.Release ();
@@ -69,7 +70,10 @@ public class SSSSSCamera : MonoBehaviour
 			width = Screen.width;
 			height = Screen.height;
 		}
-		Shader.SetGlobalTexture (depthID, depthRT);
+	}
+
+	void OnPostRender(){
+
 	}
 
 	void OnDestroy ()
@@ -91,17 +95,15 @@ public class SSSSSCamera : MonoBehaviour
 
 	void OnRenderImage (RenderTexture src, RenderTexture dest)
 	{
-
-
 		#if UNITY_EDITOR
 		mat.SetFloat (offsetID, offset);
 		#endif
-		RenderTexture origin = RenderTexture.GetTemporary (src.descriptor);
-		RenderTexture copyOri = RenderTexture.GetTemporary (src.descriptor);
-		Graphics.Blit (src, origin);
+		RenderTexture origin = RenderTexture.GetTemporary (depthRT.descriptor);
+		RenderTexture copyOri = RenderTexture.GetTemporary (depthRT.descriptor);
+		Graphics.Blit (depthRT, origin);
 		mat.SetTexture (originMapID, src);
-		RenderTexture blur1 = RenderTexture.GetTemporary (src.descriptor);
-		RenderTexture blur2 = RenderTexture.GetTemporary (src.descriptor);
+		RenderTexture blur1 = RenderTexture.GetTemporary (depthRT.descriptor);
+		RenderTexture blur2 = RenderTexture.GetTemporary (depthRT.descriptor);
 
 		mat.SetTexture (blendTexID, origin);
 		mat.SetVector (blendWeightID, new Vector4 (0.33f, 0.45f, 0.36f));
@@ -121,7 +123,7 @@ public class SSSSSCamera : MonoBehaviour
 		Graphics.Blit (blur1, blur2, mat, 1);
 		Graphics.Blit (blur2, copyOri, mat, 2);
 
-		Graphics.Blit (copyOri, dest, mat, 3);
+		Graphics.Blit (copyOri, dest, mat, 6);
 		RenderTexture.ReleaseTemporary (blur1);
 		RenderTexture.ReleaseTemporary (blur2);
 		RenderTexture.ReleaseTemporary (origin);
