@@ -13,8 +13,8 @@
 		};
 
 		struct v2f_shadow {
-  V2F_SHADOW_CASTER;
-};
+  			V2F_SHADOW_CASTER;
+		};
 
 // vertex shader
 inline v2f_shadow vert_shadow (appdata_base v) {

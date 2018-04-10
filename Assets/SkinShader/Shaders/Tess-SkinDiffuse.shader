@@ -117,16 +117,8 @@ struct v2f_surf {
   float4 tSpace0 : TEXCOORD1;
   float4 tSpace1 : TEXCOORD2;
   float4 tSpace2 : TEXCOORD3;
-
-  #if UNITY_SHOULD_SAMPLE_SH
-  half3 sh : TEXCOORD4; // SH
-  #endif
   UNITY_SHADOW_COORDS(5)
   UNITY_FOG_COORDS(6)
-  #if SHADER_TARGET >= 30
-  float4 lmap : TEXCOORD7;
-  #endif
-
   #if USE_DETAILALBEDO
   float2 pack1 : TEXCOORD8;
   #endif
@@ -135,50 +127,21 @@ struct v2f_surf {
 
   float3 worldViewDir : TEXCOORD10;
   float3 lightDir : TEXCOORD11;
-  float4 screenPos : TEXCOORD12;
   float2 pack3 : TEXCOORD13;
   float2 pack4 : TEXCOORD14;
-};
-#endif
-// with lightmaps:
-#ifdef LIGHTMAP_ON
-struct v2f_surf {
-  UNITY_POSITION(pos);
-  float2 pack0 : TEXCOORD0; // _MainTex
-  float4 tSpace0 : TEXCOORD1;
-  float4 tSpace1 : TEXCOORD2;
-  float4 tSpace2 : TEXCOORD3;
-
-  float4 lmap : TEXCOORD4;
-  UNITY_SHADOW_COORDS(5)
-  UNITY_FOG_COORDS(6)
-
-
-    #if USE_DETAILALBEDO
-  float2 pack1 : TEXCOORD7;
-  #endif
-
-
-  float2 pack2 : TEXCOORD8;
-
-  float3 worldViewDir : TEXCOORD9;
-  float3 lightDir : TEXCOORD10;
-  float4 screenPos : TEXCOORD11;
-  float2 pack3 : TEXCOORD12;
-  float2 pack4 : TEXCOORD13;
 };
 #endif
 float4 _MainTex_ST;
 
 // vertex shader
-inline v2f_surf vert_surf (appdata_full v) {
+inline v2f_surf vert_surf (appdata_fwdadd v) {
   UNITY_SETUP_INSTANCE_ID(v);
   v2f_surf o;
   UNITY_INITIALIZE_OUTPUT(v2f_surf,o);
 
  
   o.pos = UnityObjectToClipPos(v.vertex);
-  o.screenPos = ComputeScreenPos(o.pos);
+
   o.pack0.xy = TRANSFORM_TEX(v.texcoord, _MainTex);
   float3 worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
   o.worldViewDir = (UnityWorldSpaceViewDir(worldPos));
@@ -193,31 +156,9 @@ inline v2f_surf vert_surf (appdata_full v) {
   o.pack2 = TRANSFORM_TEX(v.texcoord, _DetailBump);
   o.pack3 = TRANSFORM_TEX(v.texcoord, _ThirdBump);
   o.pack4 = TRANSFORM_TEX(v.texcoord, _FourthBump);
-   o.tSpace0 = (float4(worldTangent.x, worldBinormal.x, worldNormal.x, worldPos.x));
+  o.tSpace0 = (float4(worldTangent.x, worldBinormal.x, worldNormal.x, worldPos.x));
   o.tSpace1 = (float4(worldTangent.y, worldBinormal.y, worldNormal.y, worldPos.y));
   o.tSpace2 = (float4(worldTangent.z, worldBinormal.z, worldNormal.z, worldPos.z));
-    
-  #ifdef DYNAMICLIGHTMAP_ON
-  o.lmap.zw = v.texcoord2.xy * unity_DynamicLightmapST.xy + unity_DynamicLightmapST.zw;
-  #endif
-  #ifdef LIGHTMAP_ON
-  o.lmap.xy = v.texcoord1.xy * unity_LightmapST.xy + unity_LightmapST.zw;
-  #endif
-
-  // SH/ambient and vertex lights
-  #ifndef LIGHTMAP_ON
-    #if UNITY_SHOULD_SAMPLE_SH && !UNITY_SAMPLE_FULL_SH_PER_PIXEL
-      o.sh = 0;
-      // Approximated illumination from non-important point lights
-      #ifdef VERTEXLIGHT_ON
-        o.sh += Shade4PointLights (
-          unity_4LightPosX0, unity_4LightPosY0, unity_4LightPosZ0,
-          unity_LightColor[0].rgb, unity_LightColor[1].rgb, unity_LightColor[2].rgb, unity_LightColor[3].rgb,
-          unity_4LightAtten0, worldPos, worldNormal);
-      #endif
-      o.sh = ShadeSHPerVertex (worldNormal, o.sh);
-    #endif
-  #endif // !LIGHTMAP_ON
 
   UNITY_TRANSFER_SHADOW(o,v.texcoord1.xy); // pass shadow coordinates to pixel shader
   UNITY_TRANSFER_FOG(o,o.pos); // pass fog coordinates to pixel shader
@@ -234,9 +175,8 @@ inline v2f_surf vert_surf (appdata_full v) {
 // tessellation domain shader
 [UNITY_domain("tri")]
 inline v2f_surf ds_surf (UnityTessellationFactors tessFactors, const OutputPatch<InternalTessInterp_appdata_full,3> vi, float3 bary : SV_DomainLocation) {
-  appdata_full v;
+  appdata_fwdadd v;
   v.vertex = vi[0].vertex*bary.x + vi[1].vertex*bary.y + vi[2].vertex*bary.z;
-
   #if USE_PHONG
   float3 pp[3];
   pp[0] = v.vertex.xyz - vi[0].normal * (dot(v.vertex.xyz, vi[0].normal) - dot(vi[0].vertex.xyz, vi[0].normal));
@@ -249,9 +189,6 @@ inline v2f_surf ds_surf (UnityTessellationFactors tessFactors, const OutputPatch
   v.normal = vi[0].normal*bary.x + vi[1].normal*bary.y + vi[2].normal*bary.z;
   v.texcoord = vi[0].texcoord*bary.x + vi[1].texcoord*bary.y + vi[2].texcoord*bary.z;
   v.texcoord1 = vi[0].texcoord1*bary.x + vi[1].texcoord1*bary.y + vi[2].texcoord1*bary.z;
-  v.texcoord2 = vi[0].texcoord2*bary.x + vi[1].texcoord2*bary.y + vi[2].texcoord2*bary.z;
-  v.texcoord3 = 0;
-  v.color = 0;
   #if USE_VERTEX
   vert(v);
   #endif
@@ -303,23 +240,10 @@ inline float4 frag_surf (v2f_surf IN) : SV_Target {
 
   UnityGI gi;
   UNITY_INITIALIZE_OUTPUT(UnityGI, gi);
-  gi.light.color = _LightColor0.rgb;
- // float3 bloodColor = BloodColor(o.Normal, lightDir) * o.Albedo * gi.light.color;
+  gi.light.color = _LightColor0.rgb * atten;
   gi.light.dir = lightDir;
-  //TODO
-  //Didn't finish yet
-  //float3 transparentColor = SubTransparentColor(lightDir, worldViewDir,  _LightColor0.rgb, thickness);
-  // Call GI (lightmaps/SH/reflections) lighting function
-  UnityGIInput giInput;
-  UNITY_INITIALIZE_OUTPUT(UnityGIInput, giInput);
-  giInput.light = gi.light;
-  giInput.worldPos = worldPos;
-  giInput.worldViewDir = worldViewDir;
-  giInput.atten = atten;
-
-  LightingStandardSpecular_GI(o, giInput, gi);
   // realtime lighting: call lighting function
-  c += Skin_Diffuse (o, detailNormal, thirdNormal, fourthNormal, worldViewDir, gi);
+  c += Skin_Diffuse (o, detailNormal, thirdNormal, fourthNormal, gi);
   float3 subTrans = SubTransparentColor(lightDir, worldViewDir, _LightColor0.rgb * attenNoShadow, tex2D(_ThickMap, IN.pack0));
   //float spec =  specColor(worldViewDir, lightDir, o.Normal);
   c.rgb += o.Emission + subTrans;//+ transparentColor
@@ -407,20 +331,18 @@ struct v2f_surf {
 
   float3 worldViewDir : TEXCOORD9;
   float3 lightDir : TEXCOORD10;
-  float4 screenPos : TEXCOORD11;
   float2 pack3 : TEXCOORD12;
   float2 pack4 : TEXCOORD13;
 };
 float4 _MainTex_ST;
 
 // vertex shader
-inline v2f_surf vert_surf (appdata_full v) {
+inline v2f_surf vert_surf (appdata_fwdadd v) {
   UNITY_SETUP_INSTANCE_ID(v);
   v2f_surf o;
   UNITY_INITIALIZE_OUTPUT(v2f_surf,o);
  
  o.pos = UnityObjectToClipPos(v.vertex);
-  o.screenPos = ComputeScreenPos(o.pos);
   o.pack0.xy = TRANSFORM_TEX(v.texcoord, _MainTex);
   #if USE_DETAILALBEDO
   o.pack1 = TRANSFORM_TEX(v.texcoord,_DetailAlbedo);
@@ -455,7 +377,7 @@ inline v2f_surf vert_surf (appdata_full v) {
 // tessellation domain shader
 [UNITY_domain("tri")]
 inline v2f_surf ds_surf (UnityTessellationFactors tessFactors, const OutputPatch<InternalTessInterp_appdata_full,3> vi, float3 bary : SV_DomainLocation) {
-  appdata_full v;
+appdata_fwdadd v;
   v.vertex = vi[0].vertex*bary.x + vi[1].vertex*bary.y + vi[2].vertex*bary.z;
     #if USE_PHONG
   float3 pp[3];
@@ -468,9 +390,6 @@ inline v2f_surf ds_surf (UnityTessellationFactors tessFactors, const OutputPatch
   v.normal = vi[0].normal*bary.x + vi[1].normal*bary.y + vi[2].normal*bary.z;
   v.texcoord = vi[0].texcoord*bary.x + vi[1].texcoord*bary.y + vi[2].texcoord*bary.z;
   v.texcoord1 = vi[0].texcoord1*bary.x + vi[1].texcoord1*bary.y + vi[2].texcoord1*bary.z;
-  v.texcoord2 = 0;
-  v.texcoord3 = 0;
-  v.color = 0;
     #if USE_VERTEX
   vert(v);
   #endif
@@ -527,7 +446,7 @@ inline float4 frag_surf (v2f_surf IN) : SV_Target {
   //Didn't finish yet
  // float3 transparentColor = SubTransparentColor(lightDir, worldViewDir,  _LightColor0.rgb, thickness);
   float3 subTrans = SubTransparentColor(lightDir, worldViewDir, _LightColor0.rgb * attenNoShadow, tex2D(_ThickMap, IN.pack0));
-  c += Skin_Diffuse (o, detailNormal, thirdNormal, fourthNormal, worldViewDir, gi);
+  c += Skin_Diffuse (o, detailNormal, thirdNormal, fourthNormal, gi);
   c.rgb += subTrans;
   // float spec =  specColor(worldViewDir, lightDir, o.Normal);
 //  c.rgb +=  transparentColor;
@@ -704,7 +623,7 @@ struct v2f_surf {
 float4 _MainTex_ST;
 
 // vertex shader
-inline v2f_surf vert_surf (appdata_full v) {
+inline v2f_surf vert_surf (appdata_fwdbase v) {
   UNITY_SETUP_INSTANCE_ID(v);
   v2f_surf o;
   UNITY_INITIALIZE_OUTPUT(v2f_surf,o);
@@ -725,7 +644,7 @@ inline v2f_surf vert_surf (appdata_full v) {
 // tessellation domain shader
 [UNITY_domain("tri")]
 inline v2f_surf ds_surf (UnityTessellationFactors tessFactors, const OutputPatch<InternalTessInterp_appdata_full,3> vi, float3 bary : SV_DomainLocation) {
-  appdata_full v;
+  appdata_fwdbase v;
   v.vertex = vi[0].vertex*bary.x + vi[1].vertex*bary.y + vi[2].vertex*bary.z;
     #if USE_PHONG
   float3 pp[3];
@@ -739,8 +658,6 @@ inline v2f_surf ds_surf (UnityTessellationFactors tessFactors, const OutputPatch
   v.texcoord = vi[0].texcoord*bary.x + vi[1].texcoord*bary.y + vi[2].texcoord*bary.z;
   v.texcoord1 = vi[0].texcoord1*bary.x + vi[1].texcoord1*bary.y + vi[2].texcoord1*bary.z;
   v.texcoord2 = vi[0].texcoord2*bary.x + vi[1].texcoord2*bary.y + vi[2].texcoord2*bary.z;
-  v.texcoord3 = 0;
-  v.color = 0;
    #if USE_VERTEX
   vert(v);
   #endif

@@ -152,8 +152,25 @@ struct InternalTessInterp_appdata_full {
   float4 texcoord : TEXCOORD0;
   float4 texcoord1 : TEXCOORD1;
   float4 texcoord2 : TEXCOORD2;
-  float4 color : COLOR;
 };
+
+struct appdata_fwdbase{
+    float4 vertex : POSITION;
+    float4 tangent : TANGENT;
+    float3 normal : NORMAL;
+    float4 texcoord : TEXCOORD0;
+    float4 texcoord1 : TEXCOORD1;
+    float4 texcoord2 : TEXCOORD2;
+};
+
+struct appdata_fwdadd{
+    float4 vertex : POSITION;
+    float4 tangent : TANGENT;
+    float3 normal : NORMAL;
+    float4 texcoord : TEXCOORD0;
+    float4 texcoord1 : TEXCOORD1;
+};
+
 inline InternalTessInterp_appdata_full tessvert_surf (appdata_full v) {
   InternalTessInterp_appdata_full o;
   o.vertex = v.vertex;
@@ -162,7 +179,6 @@ inline InternalTessInterp_appdata_full tessvert_surf (appdata_full v) {
   o.texcoord = v.texcoord;
   o.texcoord1 = v.texcoord1;
   o.texcoord2 = v.texcoord2;
-  o.color = v.color;
   return o;
 }
 
@@ -207,12 +223,12 @@ float3 BRDF (float3 diffColor, float3 specColor, float oneMinusReflectivity, flo
 
     float4 nv = float4(dot(normal0, viewDir), dot(normal1, viewDir), dot(normal2, viewDir), dot(normal3, viewDir));    // This abs allow to limit artifact
 
-    float4 nl = saturate(float4(dot(normal0, light.dir), dot(normal1, light.dir), dot(normal2, light.dir), dot(normal3, light.dir)));
+    float4 nl = float4(dot(normal0, light.dir), dot(normal1, light.dir), dot(normal2, light.dir), dot(normal3, light.dir));
     float4 nh = saturate(float4(dot(normal0, floatDir), dot(normal1, floatDir), dot(normal2, floatDir), dot(normal3, floatDir)));
 
     float lh = saturate(dot(light.dir, floatDir));
     BLOODCOLOR(nl);
-
+    nl = saturate(nl);
     float roughness = PerceptualRoughnessToRoughness(perceptualRoughness);
 
     // GGX with roughtness to 0 would mean no specular at all, using max(roughness, 0.002) here to match HDrenderloop roughtness remapping.
@@ -251,7 +267,7 @@ float3 BRDF (float3 diffColor, float3 specColor, float oneMinusReflectivity, flo
     return color;
 }
 
-float3 BRDFNoDiff (float3 specColor, float oneMinusReflectivity, float smoothness,
+float3 BRDFNoDiff (float3 diffColor, float3 specColor, float oneMinusReflectivity, float smoothness,
     float3 normal0, float3 normal1, float3 normal2, float3 normal3, float3 viewDir,
     UnityLight light, UnityIndirect gi)
 {
@@ -287,7 +303,7 @@ float3 BRDFNoDiff (float3 specColor, float oneMinusReflectivity, float smoothnes
     #endif
 
     #if UNITY_PASS_FORWARDADD
-     half3 color =   specularTerm * FresnelTerm (specColor, lh) * light.color;
+     float3 color =   specularTerm * FresnelTerm (specColor, lh) * light.color;
     #else
     float surfaceReduction;
 #   ifdef UNITY_COLORSPACE_GAMMA
@@ -297,7 +313,7 @@ float3 BRDFNoDiff (float3 specColor, float oneMinusReflectivity, float smoothnes
 #   endif
     half grazingTerm = saturate(smoothness + (1-oneMinusReflectivity));
     float3 color =   specularTerm * light.color * FresnelTerm (specColor, lh)
-                    + surfaceReduction * gi.specular * FresnelLerp (specColor, grazingTerm, nv);
+                    + surfaceReduction * gi.specular * FresnelLerp (specColor, grazingTerm, nv) + gi.diffuse * diffColor;
     #endif
     return color;
 }
@@ -318,7 +334,7 @@ inline float4 Skin_LightingStandardSpecular (SurfaceOutputStandardSpecular s, fl
     return c;
 }
 
-inline float4 Skin_Diffuse (SurfaceOutputStandardSpecular s, float3 normal1, float3 normal2, float3 normal3, float3 viewDir, UnityGI gi)
+inline float4 Skin_Diffuse (SurfaceOutputStandardSpecular s, float3 normal1, float3 normal2, float3 normal3, UnityGI gi)
 {
 
     // energy conservation
@@ -331,11 +347,7 @@ inline float4 Skin_Diffuse (SurfaceOutputStandardSpecular s, float3 normal1, flo
     s.Albedo = PreMultiplyAlpha (s.Albedo, s.Alpha, oneMinusReflectivity, /*out*/ outputAlpha);
     float4 nl = saturate(float4(dot(s.Normal, gi.light.dir), dot(normal1, gi.light.dir), dot(normal2,  gi.light.dir), dot(normal3,  gi.light.dir)));
     BLOODCOLOR(nl)
-    #if UNITY_PASS_FORWARDADD
-        float3 color = s.Albedo * gi.light.color * diffuse;
-    #else
-        float3 color = s.Albedo * (gi.indirect.diffuse + gi.light.color * diffuse);
-    #endif
+    float3 color = s.Albedo * gi.light.color * diffuse;
     return float4(color,1);
 }
 
@@ -349,7 +361,8 @@ inline float4 Skin_Specular (SurfaceOutputStandardSpecular s, float3 normal1, fl
     // this is necessary to handle transparency in physically correct way - only diffuse component gets affected by alpha
     float outputAlpha;
     s.Albedo = PreMultiplyAlpha (s.Albedo, s.Alpha, oneMinusReflectivity, /*out*/ outputAlpha);
-    float4 c = float4(BRDFNoDiff (s.Specular, oneMinusReflectivity, s.Smoothness, s.Normal, normal1, normal2, normal3, viewDir, gi.light, gi.indirect), outputAlpha);
+    float4 c = float4(BRDFNoDiff (s.Albedo, s.Specular, oneMinusReflectivity, s.Smoothness, s.Normal, normal1, normal2, normal3, viewDir, gi.light, gi.indirect), outputAlpha);
+
     return c;
 }
 
