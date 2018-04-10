@@ -29,8 +29,8 @@
     _FourthNormalScale("Fourth Normal Scale", float) = 1
 		_RampTex("Ramp light texture", 2D) = "white"{}
 		_BloodValue("Blood Value", Range(0.01, 1)) = 0.5
-    _Power("Power of SSS", Range(0.1,10)) = 1
-    _SSColor("SSS Color", Color) = (1,1,1,1)
+    _Power("Power of SubTransparent", Range(0.1,10)) = 1
+    _SSColor("SubTransparent Color", Color) = (1,1,1,1)
     _BlurMap("ScreenSpace Blur Map", 2D) = "white"{}
     _BlurIntensity("Blur Intensity", Range(0,3)) = 0.2
 	}
@@ -134,7 +134,7 @@ struct v2f_surf {
   float4 screenPos : TEXCOORD12;
   float2 pack3 : TEXCOORD13;
   float2 pack4 : TEXCOORD14;
-  float2 pack5 : TEXCOORD15;
+
 };
 #endif
 // with lightmaps:
@@ -163,7 +163,7 @@ struct v2f_surf {
   float4 screenPos : TEXCOORD11;
   float2 pack3 : TEXCOORD12;
   float2 pack4 : TEXCOORD13;
-  float2 pack5 : TEXCOORD14;
+
 };
 #endif
 float4 _MainTex_ST;
@@ -194,7 +194,6 @@ inline v2f_surf vert_surf (appdata_fwdbase v) {
   o.pack2 = TRANSFORM_TEX(v.texcoord, _DetailBump);
   o.pack3 = TRANSFORM_TEX(v.texcoord, _ThirdBump);
   o.pack4 = TRANSFORM_TEX(v.texcoord, _FourthBump);
-  o.pack5 = TRANSFORM_TEX(v.texcoord, _BlurMap);
    o.tSpace0 = (float4(worldTangent.x, worldBinormal.x, worldNormal.x, worldPos.x));
   o.tSpace1 = (float4(worldTangent.y, worldBinormal.y, worldNormal.y, worldPos.y));
   o.tSpace2 = (float4(worldTangent.z, worldBinormal.z, worldNormal.z, worldPos.z));
@@ -268,8 +267,6 @@ inline float4 frag_surf (v2f_surf IN) : SV_Target {
   // prepare and unpack data
   Input surfIN;
   UNITY_INITIALIZE_OUTPUT(Input,surfIN);
-  surfIN.uv_MainTex.x = 1.0;
-  
   surfIN.uv_MainTex = IN.pack0.xy;
   #if USE_DETAILALBEDO
   surfIN.uv_DetailAlbedo = IN.pack1;
@@ -333,7 +330,7 @@ inline float4 frag_surf (v2f_surf IN) : SV_Target {
 
 
   UNITY_APPLY_FOG(IN.fogCoord, c); // apply fog
-  c.a = tex2D(_BlurMap, IN.pack5).r * 0.333333333333333 * _BlurIntensity;
+  c.a = 1;
   return c;
 }
 #endif
@@ -490,7 +487,6 @@ inline float4 frag_surf (v2f_surf IN) : SV_Target {
   // prepare and unpack data
   Input surfIN;
   UNITY_INITIALIZE_OUTPUT(Input,surfIN);
-  surfIN.uv_MainTex.x = 1.0;
   
   surfIN.uv_MainTex = IN.pack0.xy;
     #if USE_DETAILALBEDO
@@ -758,7 +754,6 @@ inline float4 frag_surf (v2f_surf IN) : SV_Target {
   // prepare and unpack data
   Input surfIN;
   UNITY_INITIALIZE_OUTPUT(Input,surfIN);
-  surfIN.uv_MainTex.x = 1.0;
   
   surfIN.uv_MainTex = IN.pack0.xy;
   float3 worldPos = float3(IN.tSpace0.w, IN.tSpace1.w, IN.tSpace2.w);

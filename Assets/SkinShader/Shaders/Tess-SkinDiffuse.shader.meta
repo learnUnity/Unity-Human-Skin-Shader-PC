@@ -2,7 +2,19 @@ fileFormatVersion: 2
 guid: f8e956261e380804e951ccbd683fb650
 ShaderImporter:
   externalObjects: {}
-  defaultTextures: []
+  defaultTextures:
+  - _MainTex: {instanceID: 0}
+  - _BumpMap: {instanceID: 0}
+  - _SpecularMap: {instanceID: 0}
+  - _HeightMap: {instanceID: 0}
+  - _OcclusionMap: {instanceID: 0}
+  - _ThickMap: {instanceID: 0}
+  - _DetailAlbedo: {instanceID: 0}
+  - _DetailBump: {instanceID: 0}
+  - _ThirdBump: {instanceID: 0}
+  - _FourthBump: {instanceID: 0}
+  - _RampTex: {fileID: 2800000, guid: 43721d2a1a9c49b4585a8dd6dfab0a40, type: 3}
+  - _BlurMap: {instanceID: 0}
   nonModifiableTextures: []
   userData: 
   assetBundleName: 
