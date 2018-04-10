@@ -1,16 +1,16 @@
-SubSurface Scattering Skin!
-===========================
+# SubSurface Scattering Skin!
+
 ## Features:
 * Custom Lighting model for sub surface diffuse, specular & semi-transparency.
 * Screen-Space SSS supported.
 * Physically based textures.
 * Tessellation supported.
-
+## Limitation
+* The shader with custom lighting model can not use deferred rendering path!
+* Do not supoort mobile platform!
 ## TODO:
-* Do not support Mobile platform currently!
+* The Mobile version will be published soon!
 * Only support realistic style shading!
-* Do not support deferred rendering path currently!
-
 ## Tutorial:
 * The SubSurface Skin's shading is based on a physically based shader without direct or indirect specular color and a replace shader with only direct and indrect specular color. Thus, you have to use the given shader in the demo scene and attach a "SSSSSCamera" component under the camera which you want to have screen-space SSS effect.
 * It is confusion that in the example material, 4 normal maps were used. The principle and philosophy of using 4 normal map is simple to understand. Our skin is made by several different layers with different physical materials, for example: epidermis, vascular， genuine leather and so on. So the specular color reflected from skin will be different from others rigid objects. You want to have a non-blured main normal map, a blured main normal map, a non-blured detail map and a blured detail map to simulate the complex light reflection under the skin. You don't have to worry about the algorithm's performance inside the shader, The shader will use forward rendering path with a well-optimized lighting algorithm based on GGX.
