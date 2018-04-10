@@ -73,6 +73,7 @@
     float _FourthNormalScale;
 		float4 _SSColor;
     float _Power;
+    float _Distortion;
 		float _Thickness;
     sampler2D _ThickMap;
 		float _MinDistance;
@@ -372,8 +373,8 @@ inline float4 Skin_Specular (SurfaceOutputStandardSpecular s, float3 normal1, fl
 }
 
 
-inline float3 SubTransparentColor(float3 lightDir, float3 viewDir, float3 lightColor, float3 pointDepth){
-	float VdotH = pow(saturate(dot(viewDir, -lightDir) + 0.5), _Power);
+inline float3 SubTransparentColor(float3 lightDir, float3 normal0, float3 normal1, float3 normal2, float3 normal3, float3 viewDir, float3 lightColor, float3 pointDepth){
+	float VdotH = pow(saturate(dot(viewDir, -normalize(lightDir + normalize(normal0 + normal1 + normal2 + normal3)  * _Distortion) + 0.5)), _Power);
 	return lightColor * VdotH * _SSColor.rgb * pointDepth;
 }
 

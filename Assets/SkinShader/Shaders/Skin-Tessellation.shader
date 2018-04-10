@@ -1,4 +1,4 @@
-﻿Shader "MStudio/Tessellation Skin Diffuse" {
+﻿Shader "MStudio/Tessellation Skin" {
 	Properties {
 		_MinDist("Tess Min Distance", float) = 10
 		_MaxDist("Tess Max Distance", float) = 25
@@ -31,6 +31,7 @@
 		_BloodValue("Blood Value", Range(0.01, 1)) = 0.5
     _Power("Power of SubTransparent", Range(0.1,10)) = 1
     _SSColor("SubTransparent Color", Color) = (1,1,1,1)
+    _Distortion("SubTrans Normal Distortion", Range(0,1)) = 0.5
     _BlurMap("ScreenSpace Blur Map", 2D) = "white"{}
     _BlurIntensity("Blur Intensity", Range(0,3)) = 0.2
 	}
@@ -321,11 +322,23 @@ inline float4 frag_surf (v2f_surf IN) : SV_Target {
   #else
     giInput.ambient.rgb = 0.0;
   #endif
+  giInput.probeHDR[0] = unity_SpecCube0_HDR;
+  giInput.probeHDR[1] = unity_SpecCube1_HDR;
+  #if defined(UNITY_SPECCUBE_BLENDING) || defined(UNITY_SPECCUBE_BOX_PROJECTION)
+    giInput.boxMin[0] = unity_SpecCube0_BoxMin; // .w holds lerp value for blending
+  #endif
+  #ifdef UNITY_SPECCUBE_BOX_PROJECTION
+    giInput.boxMax[0] = unity_SpecCube0_BoxMax;
+    giInput.probePosition[0] = unity_SpecCube0_ProbePosition;
+    giInput.boxMax[1] = unity_SpecCube1_BoxMax;
+    giInput.boxMin[1] = unity_SpecCube1_BoxMin;
+    giInput.probePosition[1] = unity_SpecCube1_ProbePosition;
+  #endif
   LightingStandardSpecular_GI(o, giInput, gi);
   // realtime lighting: call lighting function
-  c += Skin_Diffuse (o, detailNormal, thirdNormal, fourthNormal, gi);
+  c += Skin_LightingStandardSpecular (o, detailNormal, thirdNormal, fourthNormal, worldViewDir, gi);
   //float spec =  specColor(worldViewDir, lightDir, o.Normal);
-    float3 subTrans = SubTransparentColor(lightDir, worldViewDir, _LightColor0, tex2D(_ThickMap, IN.pack0).rgb);
+  float3 subTrans = SubTransparentColor(lightDir, o.Normal, detailNormal, thirdNormal, fourthNormal, worldViewDir, _LightColor0, tex2D(_ThickMap, IN.pack0).rgb);
   c.rgb += o.Emission + subTrans;//+ transparentColor
 
 
@@ -524,8 +537,8 @@ inline float4 frag_surf (v2f_surf IN) : SV_Target {
   gi.light.dir = lightDir;
   //TODO
   //Didn't finish yet
-      float3 subTrans = SubTransparentColor(lightDir, worldViewDir, _LightColor0, tex2D(_ThickMap, IN.pack0).rgb);
-  c += Skin_Diffuse (o, detailNormal, thirdNormal, fourthNormal, gi);
+  float3 subTrans = SubTransparentColor(lightDir, o.Normal, detailNormal, thirdNormal, fourthNormal, worldViewDir, _LightColor0, tex2D(_ThickMap, IN.pack0).rgb);
+  c += Skin_LightingStandardSpecular (o, detailNormal, thirdNormal, fourthNormal, worldViewDir, gi);
 
   // float spec =  specColor(worldViewDir, lightDir, o.Normal);
 //  c.rgb +=  transparentColor;
