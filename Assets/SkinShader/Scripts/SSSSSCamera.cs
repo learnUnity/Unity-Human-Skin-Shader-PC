@@ -8,21 +8,15 @@ public class SSSSSCamera : MonoBehaviour
 {
 	#region MASK_SPACE
 
-	[System.NonSerialized]
-	public int width;
-	[System.NonSerialized]
-	public int height;
+	private int width;
+	private int height;
 	Camera cam;
 	Camera depthCam;
 	Shader depthShader;
 	Material mat;
 	RenderTexture depthRT;
-	int depthID;
 	[Range (0.02f, 100)]
 	public float blurRange = 20;
-
-	[Range (0, 10)]
-	public float offset = 0.5f;
 
 	// Use this for initialization
 	void Awake ()
@@ -40,27 +34,25 @@ public class SSSSSCamera : MonoBehaviour
 		camG.transform.localScale = Vector3.one;
 		camG.hideFlags = HideFlags.HideAndDontSave;
 		depthCam.renderingPath = RenderingPath.Forward;
-		depthCam.SetReplacementShader (Shader.Find ("Hidden/SSSSSReplaceMask"), "RenderType");
+		depthCam.SetReplacementShader (Shader.Find ("Hidden/SSSSSReplace"), "RenderType");
 		depthCam.farClipPlane = blurRange;
 		depthCam.clearFlags = CameraClearFlags.Color;
-		depthCam.backgroundColor = Color.black;
+		depthCam.backgroundColor = new Color (0,0,0, 0);
 		depthCam.depthTextureMode = DepthTextureMode.None;
 		depthCam.enabled = false;
-		depthID = Shader.PropertyToID ("_CameraDepthTextureWithoutSkin");
-		depthRT = new RenderTexture (Screen.width, Screen.height, 24, RenderTextureFormat.R8);
+		depthRT = new RenderTexture (Screen.width, Screen.height, 24, RenderTextureFormat.ARGBHalf);
 		depthCam.targetTexture = depthRT;
 		originMapID = Shader.PropertyToID ("_OriginTex");
 		blendTexID = Shader.PropertyToID ("_BlendTex");
 		mat = new Material (Shader.Find ("Hidden/SSSSS"));
 		blendWeightID = Shader.PropertyToID ("_BlendWeight");
-		offsetID = Shader.PropertyToID ("_Offset");
-		mat.SetFloat (offsetID, offset);
 
 
 	}
 
 	void OnPreRender ()
-	{
+	{	
+		//depthCam.projectionMatrix = cam.projectionMatrix;
 		depthCam.Render ();
 		if ((width != Screen.width) || (height != Screen.height)) {
 			depthRT.Release ();
@@ -69,7 +61,6 @@ public class SSSSSCamera : MonoBehaviour
 			width = Screen.width;
 			height = Screen.height;
 		}
-		Shader.SetGlobalTexture (depthID, depthRT);
 	}
 
 	void OnDestroy ()
@@ -87,21 +78,16 @@ public class SSSSSCamera : MonoBehaviour
 	int originMapID;
 	int blendTexID;
 	int blendWeightID;
-	int offsetID;
+
 
 	void OnRenderImage (RenderTexture src, RenderTexture dest)
 	{
-
-
-		#if UNITY_EDITOR
-		mat.SetFloat (offsetID, offset);
-		#endif
-		RenderTexture origin = RenderTexture.GetTemporary (src.descriptor);
-		RenderTexture copyOri = RenderTexture.GetTemporary (src.descriptor);
-		Graphics.Blit (src, origin);
+		RenderTexture origin = RenderTexture.GetTemporary (depthRT.descriptor);
+		RenderTexture copyOri = RenderTexture.GetTemporary (depthRT.descriptor);
+		Graphics.Blit (depthRT, origin);
 		mat.SetTexture (originMapID, src);
-		RenderTexture blur1 = RenderTexture.GetTemporary (src.descriptor);
-		RenderTexture blur2 = RenderTexture.GetTemporary (src.descriptor);
+		RenderTexture blur1 = RenderTexture.GetTemporary (depthRT.descriptor);
+		RenderTexture blur2 = RenderTexture.GetTemporary (depthRT.descriptor);
 
 		mat.SetTexture (blendTexID, origin);
 		mat.SetVector (blendWeightID, new Vector4 (0.33f, 0.45f, 0.36f));

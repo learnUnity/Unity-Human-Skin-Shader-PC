@@ -182,6 +182,7 @@ inline InternalTessInterp_appdata_full tessvert_surf (appdata_full v) {
   return o;
 }
 
+
 inline float4 Skin_GGXVisibilityTerm (float4 NdotL, float4 NdotV, float roughness)
 {
     float a = roughness;
@@ -267,7 +268,7 @@ float3 BRDF (float3 diffColor, float3 specColor, float oneMinusReflectivity, flo
     return color;
 }
 
-float3 BRDFNoDiff (float3 diffColor, float3 specColor, float oneMinusReflectivity, float smoothness,
+float3 BRDFNoDiff (float3 specColor, float oneMinusReflectivity, float smoothness,
     float3 normal0, float3 normal1, float3 normal2, float3 normal3, float3 viewDir,
     UnityLight light, UnityIndirect gi)
 {
@@ -313,7 +314,7 @@ float3 BRDFNoDiff (float3 diffColor, float3 specColor, float oneMinusReflectivit
 #   endif
     half grazingTerm = saturate(smoothness + (1-oneMinusReflectivity));
     float3 color =   specularTerm * light.color * FresnelTerm (specColor, lh)
-                    + surfaceReduction * gi.specular * FresnelLerp (specColor, grazingTerm, nv) + gi.diffuse * diffColor;
+                    + surfaceReduction * gi.specular * FresnelLerp (specColor, grazingTerm, nv);
     #endif
     return color;
 }
@@ -347,7 +348,11 @@ inline float4 Skin_Diffuse (SurfaceOutputStandardSpecular s, float3 normal1, flo
     s.Albedo = PreMultiplyAlpha (s.Albedo, s.Alpha, oneMinusReflectivity, /*out*/ outputAlpha);
     float4 nl = saturate(float4(dot(s.Normal, gi.light.dir), dot(normal1, gi.light.dir), dot(normal2,  gi.light.dir), dot(normal3,  gi.light.dir)));
     BLOODCOLOR(nl)
+    #if UNITY_PASS_FORWARDBASE
+    float3 color = s.Albedo * (gi.light.color * diffuse + gi.indirect.diffuse);
+    #else
     float3 color = s.Albedo * gi.light.color * diffuse;
+    #endif
     return float4(color,1);
 }
 
@@ -361,7 +366,7 @@ inline float4 Skin_Specular (SurfaceOutputStandardSpecular s, float3 normal1, fl
     // this is necessary to handle transparency in physically correct way - only diffuse component gets affected by alpha
     float outputAlpha;
     s.Albedo = PreMultiplyAlpha (s.Albedo, s.Alpha, oneMinusReflectivity, /*out*/ outputAlpha);
-    float4 c = float4(BRDFNoDiff (s.Albedo, s.Specular, oneMinusReflectivity, s.Smoothness, s.Normal, normal1, normal2, normal3, viewDir, gi.light, gi.indirect), outputAlpha);
+    float4 c = float4(BRDFNoDiff (s.Specular, oneMinusReflectivity, s.Smoothness, s.Normal, normal1, normal2, normal3, viewDir, gi.light, gi.indirect), outputAlpha);
 
     return c;
 }

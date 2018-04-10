@@ -11,20 +11,33 @@
 
 	sampler2D _MainTex;
 	float4 _MainTex_TexelSize;
-	float _Offset;
 
     inline float4 getWeightedColor(float2 uv, float2 offset){
 		float4 originColor =  tex2D(_MainTex, uv);
     	float4 c = originColor * 0.324;
+		offset *= originColor.a * 3;
     	float2 offsetM3 = offset * 3;
     	float2 offsetM2 = offset * 2;
-    	c += tex2D(_MainTex, uv + offsetM3) * 0.0205;
-    	c += tex2D(_MainTex, uv + offsetM2) * 0.0855;
-    	c += tex2D(_MainTex, uv + offset) * 0.232;
-    	c += tex2D(_MainTex, uv - offsetM3) * 0.0205;
-    	c += tex2D(_MainTex, uv - offsetM2) * 0.0855;
-    	c += tex2D(_MainTex, uv - offset) * 0.232;
-    	return lerp(originColor, c, originColor.a);
+		float4 currentColor;
+		currentColor = tex2D(_MainTex, uv + offsetM3);
+		currentColor.rgb = lerp(originColor.rgb, currentColor.rgb, step(0.002, currentColor.a));
+    	c += currentColor * 0.0205;
+		currentColor = tex2D(_MainTex, uv + offsetM2);
+		currentColor.rgb = lerp(originColor.rgb, currentColor.rgb, step(0.002, currentColor.a));
+    	c += currentColor * 0.0855;
+		currentColor = tex2D(_MainTex, uv + offset);
+		currentColor.rgb = lerp(originColor.rgb, currentColor.rgb, step(0.002, currentColor.a));
+    	c += currentColor * 0.232;
+		currentColor = tex2D(_MainTex, uv - offsetM3);
+		currentColor.rgb = lerp(originColor.rgb, currentColor.rgb, step(0.002, currentColor.a));
+    	c += currentColor * 0.0205;
+		currentColor = tex2D(_MainTex, uv - offsetM2);
+		currentColor.rgb = lerp(originColor.rgb, currentColor.rgb, step(0.002, currentColor.a));
+    	c += currentColor * 0.0855;
+		currentColor = tex2D(_MainTex, uv - offset);
+		currentColor.rgb = lerp(originColor.rgb, currentColor.rgb, step(0.002, currentColor.a));
+    	c += currentColor * 0.232;
+    	return c;
     }
     			struct v2f_mg
 			{
@@ -38,7 +51,7 @@
 			}
 
 	ENDCG
-	//0. vert 1. hori 2. blend 3. mask 4,5 downsample 6 add
+	//0. vert 1. hori 2. blend 3. add
 		// No culling or depth
 		Cull Off ZWrite Off ZTest Always
 
@@ -63,7 +76,7 @@
 				v2f_mg o;
 				o.vertex = UnityObjectToClipPos(v.vertex);
 				o.uv = v.uv;
-				o.offset = _MainTex_TexelSize.xy * float2(0,_Offset);
+				o.offset = _MainTex_TexelSize.xy * float2(0,1);
 				return o;
 			}
 			ENDCG
@@ -89,7 +102,7 @@
 				v2f_mg o;
 				o.vertex = UnityObjectToClipPos(v.vertex);
 				o.uv = v.uv;
-				o.offset = _MainTex_TexelSize.xy * float2(_Offset,0);
+				o.offset = _MainTex_TexelSize.xy * float2(1,0);
 				return o;
 			}
 			ENDCG
@@ -131,125 +144,7 @@
 			}
 			ENDCG
 		}
-		
-		Pass{
-		//Mask
-			CGPROGRAM
-			#pragma vertex vert
-			#pragma fragment frag
-
-			sampler2D _OriginTex;
-			sampler2D _CameraDepthTextureWithoutSkin;
-			struct appdata
-			{
-				float4 vertex : POSITION;
-				float2 uv : TEXCOORD0;
-			};
-
-			struct v2f
-			{
-				float4 vertex : SV_POSITION; 
-				float2 uv : TEXCOORD0;
-			};
-
-			inline v2f vert (appdata v)
-			{
-				v2f o;
-				o.vertex = UnityObjectToClipPos(v.vertex);
-				o.uv = v.uv;
-				return o;
-			}
-
-			inline float4 frag (v2f i) : SV_Target
-			{
-				return lerp(tex2D(_OriginTex, i.uv), tex2D(_MainTex, i.uv), tex2D(_CameraDepthTextureWithoutSkin, i.uv).r);
-			}
-			ENDCG
-		}
-		
-		Pass
-		{
-		//DownSample
-			CGPROGRAM
-			#pragma vertex vert
-			#pragma fragment frag
-
-
-			struct appdata
-			{
-				float4 vertex : POSITION;
-				float2 uv : TEXCOORD0;
-			};
-
-			struct v2f
-			{
-				float2 uv : TEXCOORD0;
-				float4 vertex : SV_POSITION;
-				float4 offset : TEXCOORD1;
-			};
-
-			inline v2f vert (appdata v)
-			{
-				v2f o;
-				o.vertex = UnityObjectToClipPos(v.vertex);
-				o.uv = v.uv;
-				o.offset = float4(_MainTex_TexelSize.x,0,0,_MainTex_TexelSize.y);
-				return o;
-			}
-
-			inline float4 frag (v2f i) : SV_Target{
-				float2 offset = _MainTex_TexelSize;
-			  	float4 c = tex2D(_MainTex, i.uv + i.offset.xy);
-			  	c += tex2D(_MainTex, i.uv + i.offset.zw);
-			  	c += tex2D(_MainTex, i.uv - i.offset.xy);
-			  	c += tex2D(_MainTex, i.uv - i.offset.zw);
-			  	c.r = saturate(c.r);
-    			return c;
-			}
-			ENDCG
-		}
-
-		Pass
-		{
-		//DownSample
-			CGPROGRAM
-			#pragma vertex vert
-			#pragma fragment frag
-
-
-			struct appdata
-			{
-				float4 vertex : POSITION;
-				float2 uv : TEXCOORD0;
-			};
-
-			struct v2f
-			{
-				float2 uv : TEXCOORD0;
-				float4 vertex : SV_POSITION;
-				float4 offset : TEXCOORD1;
-			};
-
-			inline v2f vert (appdata v)
-			{
-				v2f o;
-				o.vertex = UnityObjectToClipPos(v.vertex);
-				o.uv = v.uv;
-				o.offset = float4(_MainTex_TexelSize.x,0,0,_MainTex_TexelSize.y);
-				return o;
-			}
-
-			inline float4 frag (v2f i) : SV_Target{
-			  	float4 c = tex2D(_MainTex, i.uv + i.offset.xy);
-			  	c += tex2D(_MainTex, i.uv + i.offset.zw);
-			  	c += tex2D(_MainTex, i.uv - i.offset.xy);
-			  	c += tex2D(_MainTex, i.uv - i.offset.zw);
-    			return c / 4;
-			}
-			ENDCG
-		}
-
-		
+	
 		Pass{
 		//Add
 			CGPROGRAM
@@ -279,7 +174,7 @@
 
 			inline float4 frag (v2f i) : SV_Target
 			{
-				return tex2D(_OriginTex, i.uv) + tex2D(_MainTex, i.uv);
+				return saturate(tex2D(_OriginTex, i.uv)) + saturate(tex2D(_MainTex, i.uv));
 			}
 			ENDCG
 		}

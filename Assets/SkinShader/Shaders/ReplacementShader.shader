@@ -149,15 +149,8 @@ struct v2f_surf {
   float4 tSpace0 : TEXCOORD1;
   float4 tSpace1 : TEXCOORD2;
   float4 tSpace2 : TEXCOORD3;
-
-  #if UNITY_SHOULD_SAMPLE_SH
-  half3 sh : TEXCOORD4; // SH
-  #endif
   UNITY_SHADOW_COORDS(5)
   UNITY_FOG_COORDS(6)
-  #if SHADER_TARGET >= 30
-  float4 lmap : TEXCOORD7;
-  #endif
 
   #if USE_DETAILALBEDO
   float2 pack1 : TEXCOORD8;
@@ -170,6 +163,7 @@ struct v2f_surf {
   float4 screenPos : TEXCOORD12;
   float2 pack3 : TEXCOORD13;
   float2 pack4 : TEXCOORD14;
+  float2 pack5 : TEXCOORD15;
 };
 #endif
 // with lightmaps:
@@ -181,7 +175,6 @@ struct v2f_surf {
   float4 tSpace1 : TEXCOORD2;
   float4 tSpace2 : TEXCOORD3;
 
-  float4 lmap : TEXCOORD4;
   UNITY_SHADOW_COORDS(5)
   UNITY_FOG_COORDS(6)
 
@@ -198,12 +191,16 @@ struct v2f_surf {
   float4 screenPos : TEXCOORD11;
   float2 pack3 : TEXCOORD12;
   float2 pack4 : TEXCOORD13;
+  float2 pack5 : TEXCOORD14;
 };
 #endif
 float4 _MainTex_ST;
 
+ sampler2D  _BlurMap;
+ float _BlurIntensity;
+ float4 _BlurMap_ST;
 // vertex shader
-inline v2f_surf vert_surf (appdata_fwdadd v) {
+inline v2f_surf vert_surf (appdata_fwdbase v) {
   UNITY_SETUP_INSTANCE_ID(v);
   v2f_surf o;
   UNITY_INITIALIZE_OUTPUT(v2f_surf,o);
@@ -225,31 +222,11 @@ inline v2f_surf vert_surf (appdata_fwdadd v) {
   o.pack2 = TRANSFORM_TEX(v.texcoord, _DetailBump);
   o.pack3 = TRANSFORM_TEX(v.texcoord, _ThirdBump);
   o.pack4 = TRANSFORM_TEX(v.texcoord, _FourthBump);
+  o.pack5 = TRANSFORM_TEX(v.texcoord, _BlurMap);
    o.tSpace0 = (float4(worldTangent.x, worldBinormal.x, worldNormal.x, worldPos.x));
   o.tSpace1 = (float4(worldTangent.y, worldBinormal.y, worldNormal.y, worldPos.y));
   o.tSpace2 = (float4(worldTangent.z, worldBinormal.z, worldNormal.z, worldPos.z));
-    
-  #ifdef DYNAMICLIGHTMAP_ON
-  o.lmap.zw = v.texcoord2.xy * unity_DynamicLightmapST.xy + unity_DynamicLightmapST.zw;
-  #endif
-  #ifdef LIGHTMAP_ON
-  o.lmap.xy = v.texcoord1.xy * unity_LightmapST.xy + unity_LightmapST.zw;
-  #endif
 
-  // SH/ambient and vertex lights
-  #ifndef LIGHTMAP_ON
-    #if UNITY_SHOULD_SAMPLE_SH && !UNITY_SAMPLE_FULL_SH_PER_PIXEL
-      o.sh = 0;
-      // Approximated illumination from non-important point lights
-      #ifdef VERTEXLIGHT_ON
-        o.sh += Shade4PointLights (
-          unity_4LightPosX0, unity_4LightPosY0, unity_4LightPosZ0,
-          unity_LightColor[0].rgb, unity_LightColor[1].rgb, unity_LightColor[2].rgb, unity_LightColor[3].rgb,
-          unity_4LightAtten0, worldPos, worldNormal);
-      #endif
-      o.sh = ShadeSHPerVertex (worldNormal, o.sh);
-    #endif
-  #endif // !LIGHTMAP_ON
 
   UNITY_TRANSFER_SHADOW(o,v.texcoord1.xy); // pass shadow coordinates to pixel shader
   UNITY_TRANSFER_FOG(o,o.pos); // pass fog coordinates to pixel shader
@@ -266,7 +243,7 @@ inline v2f_surf vert_surf (appdata_fwdadd v) {
 // tessellation domain shader
 [UNITY_domain("tri")]
 inline v2f_surf ds_surf (UnityTessellationFactors tessFactors, const OutputPatch<InternalTessInterp_appdata_full,3> vi, float3 bary : SV_DomainLocation) {
-  appdata_fwdadd v;
+  appdata_fwdbase v;
   v.vertex = vi[0].vertex*bary.x + vi[1].vertex*bary.y + vi[2].vertex*bary.z;
 
   #if USE_PHONG
@@ -281,6 +258,7 @@ inline v2f_surf ds_surf (UnityTessellationFactors tessFactors, const OutputPatch
   v.normal = vi[0].normal*bary.x + vi[1].normal*bary.y + vi[2].normal*bary.z;
   v.texcoord = vi[0].texcoord*bary.x + vi[1].texcoord*bary.y + vi[2].texcoord*bary.z;
   v.texcoord1 = vi[0].texcoord1*bary.x + vi[1].texcoord1*bary.y + vi[2].texcoord1*bary.z;
+  v.texcoord2 = vi[0].texcoord2*bary.x + vi[1].texcoord2*bary.y + vi[2].texcoord2*bary.z;
   #if USE_VERTEX
   vert(v);
   #endif
@@ -343,16 +321,9 @@ inline float4 frag_surf (v2f_surf IN) : SV_Target {
   giInput.worldPos = worldPos;
   giInput.worldViewDir = worldViewDir;
   giInput.atten = atten;
-  #if defined(LIGHTMAP_ON) || defined(DYNAMICLIGHTMAP_ON)
-    giInput.lightmapUV = IN.lmap;
-  #else
-    giInput.lightmapUV = 0.0;
-  #endif
-  #if UNITY_SHOULD_SAMPLE_SH && !UNITY_SAMPLE_FULL_SH_PER_PIXEL
-    giInput.ambient = IN.sh;
-  #else
-    giInput.ambient.rgb = 0.0;
-  #endif
+  giInput.lightmapUV = 0.0;
+  giInput.ambient.rgb = 0.0;
+
   giInput.probeHDR[0] = unity_SpecCube0_HDR;
   giInput.probeHDR[1] = unity_SpecCube1_HDR;
   #if defined(UNITY_SPECCUBE_BLENDING) || defined(UNITY_SPECCUBE_BOX_PROJECTION)
@@ -372,7 +343,7 @@ inline float4 frag_surf (v2f_surf IN) : SV_Target {
   c.rgb += o.Emission;//+ transparentColor
 
   UNITY_APPLY_FOG(IN.fogCoord, c); // apply fog
-  UNITY_OPAQUE_ALPHA(c.a);
+  c.a = tex2D(_BlurMap, IN.pack5).r * 0.333333333333333 * _BlurIntensity;
   return c;
 }
 
@@ -575,7 +546,6 @@ inline float4 frag_surf (v2f_surf IN) : SV_Target {
 //  c.rgb +=  transparentColor;
   c.a = 0.0;
   UNITY_APPLY_FOG(IN.fogCoord, c); // apply fog
-  UNITY_OPAQUE_ALPHA(c.a);
   return c;
 }
 
@@ -877,186 +847,5 @@ ENDCG
 			}
 			ENDCG
 		}
-	}
-
-	SubShader
-	{
-		Tags { "RenderType"="TreeOpaque" }
-		Pass
-		{
-			CGPROGRAM
-			#pragma vertex vert
-			#pragma fragment frag
-
-			
-			v2f vert (appdata v)
-			{
-				v2f o;
-				o.vertex = UnityObjectToClipPos(v.vertex);
-				return o;
-			}
-			
-			fixed4 frag (v2f i) : SV_Target
-			{
-				return 0;
-			}
-			ENDCG
-		}
-
-		Pass {
-Name "ShadowCaster"
-Tags { "LightMode" = "ShadowCaster" }
-ZWrite On ZTest Less
-CGPROGRAM
-// compile directives
-#pragma vertex vert_shadow
-#pragma fragment frag_shadow
-#pragma target 3.0
-#pragma skip_variants FOG_LINEAR FOG_EXP FOG_EXP2
-#pragma multi_compile_shadowcaster
-ENDCG
-}
-	}
-
-	SubShader
-	{
-		Tags { "RenderType"="TreeTransparentCutout" }
-		Pass
-		{
-			CGPROGRAM
-			#pragma vertex vert
-			#pragma fragment frag
-
-			
-			v2f vert (appdata v)
-			{
-				v2f o;
-				o.vertex = UnityObjectToClipPos(v.vertex);
-				return o;
-			}
-			
-			fixed4 frag (v2f i) : SV_Target
-			{
-				return 0;
-			}
-			ENDCG
-		}
-	}
-
-	SubShader
-	{
-		Tags { "RenderType"="TreeBillboard" }
-		Pass
-		{
-			CGPROGRAM
-			#pragma vertex vert
-			#pragma fragment frag
-
-			
-			v2f vert (appdata v)
-			{
-				v2f o;
-				o.vertex = UnityObjectToClipPos(v.vertex);
-				return o;
-			}
-			
-			fixed4 frag (v2f i) : SV_Target
-			{
-				return 0;
-			}
-			ENDCG
-		}
-
-		Pass {
-Name "ShadowCaster"
-Tags { "LightMode" = "ShadowCaster" }
-ZWrite On ZTest Less
-CGPROGRAM
-// compile directives
-#pragma vertex vert_shadow
-#pragma fragment frag_shadow
-#pragma target 3.0
-#pragma skip_variants FOG_LINEAR FOG_EXP FOG_EXP2
-#pragma multi_compile_shadowcaster
-ENDCG
-}
-	}
-
-	SubShader
-	{
-		Tags { "RenderType"="Grass" }
-		Pass
-		{
-			CGPROGRAM
-			#pragma vertex vert
-			#pragma fragment frag
-
-			
-			v2f vert (appdata v)
-			{
-				v2f o;
-				o.vertex = UnityObjectToClipPos(v.vertex);
-				return o;
-			}
-			
-			fixed4 frag (v2f i) : SV_Target
-			{
-				return 0;
-			}
-			ENDCG
-		}
-
-		Pass {
-Name "ShadowCaster"
-Tags { "LightMode" = "ShadowCaster" }
-ZWrite On ZTest Less
-CGPROGRAM
-// compile directives
-#pragma vertex vert_shadow
-#pragma fragment frag_shadow
-#pragma target 3.0
-#pragma skip_variants FOG_LINEAR FOG_EXP FOG_EXP2
-#pragma multi_compile_shadowcaster
-ENDCG
-}
-	}
-
-	SubShader
-	{
-		Tags { "RenderType"="GrassBillboard" }
-		Pass
-		{
-			CGPROGRAM
-			#pragma vertex vert
-			#pragma fragment frag
-
-			
-			v2f vert (appdata v)
-			{
-				v2f o;
-				o.vertex = UnityObjectToClipPos(v.vertex);
-				return o;
-			}
-			
-			fixed4 frag (v2f i) : SV_Target
-			{
-				return 0;
-			}
-			ENDCG
-		}
-
-		Pass {
-Name "ShadowCaster"
-Tags { "LightMode" = "ShadowCaster" }
-ZWrite On ZTest Less
-CGPROGRAM
-// compile directives
-#pragma vertex vert_shadow
-#pragma fragment frag_shadow
-#pragma target 3.0
-#pragma skip_variants FOG_LINEAR FOG_EXP FOG_EXP2
-#pragma multi_compile_shadowcaster
-ENDCG
-}
 	}
 }
