@@ -3,108 +3,74 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
 
-[RequireComponent (typeof(Camera))]
+[RequireComponent(typeof(Camera))]
 public class SSSSSCamera : MonoBehaviour
 {
-	#region MASK_SPACE
+    #region MASK_SPACE
+    Camera cam;
+    Material mat;
+    CommandBuffer buffer;
+    // Use this for initialization
+    void Awake()
+    {
 
-	private int width;
-	private int height;
-	Camera cam;
-	Camera depthCam;
-	Shader depthShader;
-	Material mat;
-	RenderTexture depthRT;
-	[Range (0.02f, 1000)]
-	public float effectDistance = 50;
+        cam = GetComponent<Camera>();
+        cam.depthTextureMode |= DepthTextureMode.Depth;
+        blendTexID = Shader.PropertyToID("_BlendTex");
+        blendTex1ID = Shader.PropertyToID("_BlendTex1");
+        mat = new Material(Shader.Find("Hidden/SSSSS"));
+        blendWeightID = Shader.PropertyToID("_BlendWeight");
+        blendWeight1ID = Shader.PropertyToID("_BlendWeight1");
+        blendWeight2ID = Shader.PropertyToID("_BlendWeight2");
 
-	// Use this for initialization
-	void Awake ()
-	{
-		width = Screen.width;
-		height = Screen.height;
-		cam = GetComponent<Camera> ();
-		cam.depthTextureMode |= DepthTextureMode.Depth;
-		var camG = new GameObject ("Depth Camera", typeof(Camera));
-		depthCam = camG.GetComponent<Camera> ();
-		depthCam.CopyFrom (cam);
-		camG.transform.SetParent (transform);
-		camG.transform.localPosition = Vector3.zero;
-		camG.transform.localRotation = Quaternion.identity;
-		camG.transform.localScale = Vector3.one;
-		camG.hideFlags = HideFlags.HideAndDontSave;
-		depthCam.renderingPath = RenderingPath.Forward;
-		depthCam.SetReplacementShader (Shader.Find ("Hidden/SSSSSReplace"), "RenderType");
-		depthCam.farClipPlane = Mathf.Min(effectDistance,cam.farClipPlane);
-		depthCam.clearFlags = CameraClearFlags.Color;
-		depthCam.backgroundColor = new Color (0,0,0, 0);
-		depthCam.depthTextureMode = DepthTextureMode.None;
-		depthCam.enabled = false;
-		depthRT = new RenderTexture (Screen.width, Screen.height, 24, RenderTextureFormat.RGFloat);
-		depthCam.targetTexture = depthRT;
-		blendTexID = Shader.PropertyToID ("_BlendTex");
-		mat = new Material (Shader.Find ("Hidden/SSSSS"));
-		blendWeightID = Shader.PropertyToID ("_BlendWeight");
-		signID = Shader.PropertyToID("_Sign");
-	}
+        int blur1ID = Shader.PropertyToID("_Blur1Tex");
+        int blur2ID = Shader.PropertyToID("_Blur2Tex");
+        Shader.SetGlobalVector(blendWeightID, new Vector4(0.33f, 0.45f, 0.36f));
+        Shader.SetGlobalVector(blendWeight1ID, new Vector4(0.34f, 0.19f));
+        Shader.SetGlobalVector(blendWeight2ID, new Vector4(0.46f, 0f, 0.04f));
+        buffer = new CommandBuffer();
+        buffer.name = "SSSSS";
+        buffer.GetTemporaryRT(blendTexID, Screen.width, Screen.height, 24);
+        buffer.GetTemporaryRT(blendTex1ID, Screen.width, Screen.height, 24);
+        buffer.GetTemporaryRT(blur1ID, Screen.width, Screen.height, 24);
+        buffer.GetTemporaryRT(blur2ID, Screen.width, Screen.height, 24);
+        buffer.Blit(BuiltinRenderTextureType.CameraTarget, blendTexID);
+        buffer.Blit(blendTexID, blur1ID, mat, 0);
+        buffer.Blit(blur1ID, blur2ID, mat, 1);
+        buffer.Blit(blur2ID, blendTex1ID, mat, 2);
 
-	void OnPreRender ()
-	{	
-		//depthCam.projectionMatrix = cam.projectionMatrix;
-		depthCam.Render ();
-		if ((width != Screen.width) || (height != Screen.height)) {
-			depthRT.Release ();
-			depthRT.width = Screen.width;
-			depthRT.height = Screen.height;
-			width = Screen.width;
-			height = Screen.height;
-		}
-	}
+        buffer.Blit(blendTex1ID, blur1ID, mat, 0);
+        buffer.Blit(blur1ID, blur2ID, mat, 1);
+        buffer.Blit(blur2ID, blendTexID, mat, 3);
 
-	void OnDestroy ()
-	{
-		Destroy (depthRT);
-		if (depthCam)
-			Destroy (depthCam.gameObject);
-	}
+        buffer.Blit(blendTexID, blur1ID, mat, 0);
+        buffer.Blit(blur1ID, blur2ID, mat, 1);
+        buffer.Blit(blur2ID, BuiltinRenderTextureType.CameraTarget, mat, 4);
+        buffer.ReleaseTemporaryRT(blendTexID);
+        buffer.ReleaseTemporaryRT(blendTex1ID);
+        buffer.ReleaseTemporaryRT(blur1ID);
+        buffer.ReleaseTemporaryRT(blur2ID);
+    }
 
-	#endregion
+    void OnEnable()
+    {
+        cam.AddCommandBuffer(CameraEvent.AfterForwardOpaque, buffer);
+    }
 
-	#region POST_PROCESS
-	int signID;
-	int blendTexID;
-	int blendWeightID;
+    void OnDisable()
+    {
+        cam.RemoveCommandBuffer(CameraEvent.AfterForwardOpaque, buffer);
+    }
 
+    #endregion
 
-	void OnRenderImage (RenderTexture src, RenderTexture dest)
-	{
-		RenderTexture origin = RenderTexture.GetTemporary (src.descriptor);
-		RenderTexture blur1 = RenderTexture.GetTemporary (src.descriptor);
-		RenderTexture blur2 = RenderTexture.GetTemporary (src.descriptor);
-		mat.SetTexture(signID, depthRT);
+    #region POST_PROCESS
 
-		mat.SetTexture (blendTexID, src);
-		mat.SetVector (blendWeightID, new Vector4 (0.33f, 0.45f, 0.36f));
-		Graphics.Blit (src, blur1, mat, 0);
-		Graphics.Blit (blur1, blur2, mat, 1);
-		Graphics.Blit (blur2, origin, mat, 2);
+    int blendTexID;
+    int blendTex1ID;
+    int blendWeightID;
+    int blendWeight1ID;
+    int blendWeight2ID;
 
-		mat.SetTexture (blendTexID, origin);
-		mat.SetVector (blendWeightID, new Vector4 (0.34f, 0.19f));
-		Graphics.Blit (origin, blur1, mat, 0);
-		Graphics.Blit (blur1, blur2, mat, 1);
-		Graphics.Blit (blur2, src, mat, 2);
-
-		mat.SetTexture (blendTexID, src);
-		mat.SetVector (blendWeightID, new Vector4 (0.46f, 0f, 0.04f));
-		Graphics.Blit (src, blur1, mat, 0);
-		Graphics.Blit (blur1, blur2, mat, 1);
-		Graphics.Blit (blur2, dest, mat, 2);
-
-		RenderTexture.ReleaseTemporary (blur1);
-		RenderTexture.ReleaseTemporary (blur2);
-		RenderTexture.ReleaseTemporary (origin);
-	}
-
-	#endregion
+    #endregion
 }

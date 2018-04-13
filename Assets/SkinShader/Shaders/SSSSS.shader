@@ -8,33 +8,32 @@
 	{
 	CGINCLUDE
 	#include "UnityCG.cginc"
-	sampler2D _Sign;
 	sampler2D _MainTex;
 	float4 _MainTex_TexelSize;
 
+
     inline float4 getWeightedColor(float2 uv, float2 offset){
-		
 		float4 originColor =  tex2D(_MainTex, uv);
     	float4 c = originColor * 0.324;
-	//	float2 step = step(float2(0.9,0.9), float2(tex2D(_Sign, uv + offset).g, tex2D(_Sign, uv - offset).g));
-		offset *= tex2D(_Sign, uv).r * 3;
+		offset *= (1 - originColor.a) * 3;
     	float2 offsetM3 = offset * 3;
     	float2 offsetM2 = offset * 2;
-		float2 current_uv = uv + offsetM3;
-    	c += lerp(originColor, tex2D(_MainTex, current_uv), step(0.98, tex2D(_Sign, current_uv).g)) * 0.0205;
-		current_uv = uv + offsetM2;
-    	c += lerp(originColor, tex2D(_MainTex, current_uv), step(0.98, tex2D(_Sign, current_uv).g))  * 0.0855;
-		current_uv = uv + offset;
-    	c += lerp(originColor, tex2D(_MainTex, current_uv), step(0.98, tex2D(_Sign, current_uv).g)) * 0.232;
-		current_uv = uv - offsetM3;
-    	c += lerp(originColor, tex2D(_MainTex, current_uv), step(0.98, tex2D(_Sign, current_uv).g)) * 0.0205;
-		current_uv = uv-offsetM2;
-    	c += lerp(originColor, tex2D(_MainTex, current_uv), step(0.98, tex2D(_Sign, current_uv).g)) * 0.0855;
-		current_uv = uv-offset;
-    	c += lerp(originColor, tex2D(_MainTex, current_uv), step(0.98, tex2D(_Sign, current_uv).g)) * 0.232;
+		float4 col = tex2D(_MainTex, uv + offsetM3);
+    	c += lerp(originColor, col, step(col.a, 0.998)) * 0.0205;
+		col = tex2D(_MainTex, uv + offsetM2);
+    	c += lerp(originColor, col, step(col.a, 0.998))  * 0.0855;
+		col = tex2D(_MainTex, uv + offset);
+    	c += lerp(originColor, col, step(col.a, 0.998)) * 0.232;
+		col = tex2D(_MainTex, uv - offsetM3);
+    	c += lerp(originColor, col, step(col.a, 0.998)) * 0.0205;
+		col = tex2D(_MainTex, uv - offsetM2);
+    	c += lerp(originColor, col, step(col.a, 0.998))  * 0.0855;
+		col = tex2D(_MainTex, uv - offset);
+    	c += lerp(originColor, col, step(col.a, 0.998)) * 0.232;
+		c.a = originColor.a;
     	return c;
     }
-    			struct v2f_mg
+    	struct v2f_mg
 			{
 				float2 uv : TEXCOORD0;
 				float4 vertex : SV_POSITION;
@@ -136,6 +135,80 @@
 			inline float4 frag (v2f i) : SV_Target
 			{
 				return tex2D(_BlendTex, i.uv) * i.oneMinusWeight + tex2D(_MainTex, i.uv) * _BlendWeight;
+			}
+			ENDCG
+		}
+
+		Pass{
+			//Blend
+			CGPROGRAM
+			#pragma vertex vert
+			#pragma fragment frag
+
+			sampler2D _BlendTex1;
+			float4 _BlendWeight1;
+			struct appdata
+			{
+				float4 vertex : POSITION;
+				float2 uv : TEXCOORD0;
+			};
+
+			struct v2f
+			{
+				float2 uv : TEXCOORD0;
+				float4 vertex : SV_POSITION;
+				float4 oneMinusWeight : TEXCOORD1;
+			};
+
+			inline v2f vert (appdata v)
+			{
+				v2f o;
+				o.vertex = UnityObjectToClipPos(v.vertex);
+				o.uv = v.uv;
+				o.oneMinusWeight = float4(1,1,1,1) - _BlendWeight1;
+				return o;
+			}
+
+			inline float4 frag (v2f i) : SV_Target
+			{
+				return tex2D(_BlendTex1, i.uv) * i.oneMinusWeight + tex2D(_MainTex, i.uv) * _BlendWeight1;
+			}
+			ENDCG
+		}
+
+		Pass{
+			//Blend
+			CGPROGRAM
+			#pragma vertex vert
+			#pragma fragment frag
+
+			sampler2D _BlendTex;
+			float4 _BlendWeight2;
+			struct appdata
+			{
+				float4 vertex : POSITION;
+				float2 uv : TEXCOORD0;
+			};
+
+			struct v2f
+			{
+				float2 uv : TEXCOORD0;
+				float4 vertex : SV_POSITION;
+				float4 oneMinusWeight : TEXCOORD1;
+			};
+
+			inline v2f vert (appdata v)
+			{
+				v2f o;
+				o.vertex = UnityObjectToClipPos(v.vertex);
+				o.uv = v.uv;
+				o.oneMinusWeight = float4(1,1,1,1) - _BlendWeight2;
+				return o;
+			}
+
+			inline float4 frag (v2f i) : SV_Target
+			{
+				return tex2D(_BlendTex, i.uv) * i.oneMinusWeight + tex2D(_MainTex, i.uv) * _BlendWeight2;
 			}
 			ENDCG
 		}

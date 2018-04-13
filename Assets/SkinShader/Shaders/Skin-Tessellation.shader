@@ -135,7 +135,7 @@ struct v2f_surf {
   float4 screenPos : TEXCOORD12;
   float2 pack3 : TEXCOORD13;
   float2 pack4 : TEXCOORD14;
-
+  float2 pack5 : TEXCOORD15;
 };
 #endif
 // with lightmaps:
@@ -164,6 +164,7 @@ struct v2f_surf {
   float4 screenPos : TEXCOORD11;
   float2 pack3 : TEXCOORD12;
   float2 pack4 : TEXCOORD13;
+  float2 pack5 : TEXCOORD14;
 
 };
 #endif
@@ -195,6 +196,7 @@ inline v2f_surf vert_surf (appdata_fwdbase v) {
   o.pack2 = TRANSFORM_TEX(v.texcoord, _DetailBump);
   o.pack3 = TRANSFORM_TEX(v.texcoord, _ThirdBump);
   o.pack4 = TRANSFORM_TEX(v.texcoord, _FourthBump);
+  o.pack5 = TRANSFORM_TEX(v.texcoord, _BlurMap);
    o.tSpace0 = (float4(worldTangent.x, worldBinormal.x, worldNormal.x, worldPos.x));
   o.tSpace1 = (float4(worldTangent.y, worldBinormal.y, worldNormal.y, worldPos.y));
   o.tSpace2 = (float4(worldTangent.z, worldBinormal.z, worldNormal.z, worldPos.z));
@@ -343,7 +345,7 @@ inline float4 frag_surf (v2f_surf IN) : SV_Target {
 
 
   UNITY_APPLY_FOG(IN.fogCoord, c); // apply fog
-  c.a = 1;
+  c.a = 1 - tex2D(_BlurMap, IN.pack5) * 0.333333333 * _BlurIntensity;
   return c;
 }
 #endif
