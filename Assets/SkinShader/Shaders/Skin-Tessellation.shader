@@ -33,7 +33,7 @@
     _SSColor("SubTransparent Color", Color) = (1,1,1,1)
     _Distortion("SubTrans Normal Distortion", Range(0,1)) = 0.5
     _BlurMap("ScreenSpace Blur Map", 2D) = "white"{}
-    _BlurIntensity("Blur Intensity", Range(0,3)) = 0.2
+    _BlurIntensity("Blur Intensity", Range(0,1)) = 0.2
 	}
 	SubShader {
 		Tags { "RenderType"="SubSurfaceTess" }
@@ -345,7 +345,7 @@ inline float4 frag_surf (v2f_surf IN) : SV_Target {
 
 
   UNITY_APPLY_FOG(IN.fogCoord, c); // apply fog
-  c.a = 1 - tex2D(_BlurMap, IN.pack5) * 0.333333333 * _BlurIntensity;
+  c.a = 1 - tex2D(_BlurMap, IN.pack5) * _BlurIntensity;
   return c;
 }
 #endif

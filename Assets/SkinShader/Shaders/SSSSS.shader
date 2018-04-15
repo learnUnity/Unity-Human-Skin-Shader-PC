@@ -11,26 +11,35 @@
 	sampler2D _MainTex;
 	float4 _MainTex_TexelSize;
 
+	#define BLUR0 0.12516840610182164
+	#define BLUR1 0.11975714566876787
+	#define BLUR2 0.10488697964330942
+	#define BLUR3 0.08409209097592142
+	#define BLUR4 0.061716622693291805
+	#define BLUR5 0.04146317758515726
+	#define BLUR6 0.025499780382641484
+	#define Gaus(offset, blur)\
+		col = tex2D(_MainTex, uv + offset);\
+		c += lerp(originColor, col, step(col.a, 0.998)) * blur;\
+		col = tex2D(_MainTex, uv - offset);\
+		c += lerp(originColor, col, step(col.a, 0.998)) * blur;
 
     inline float4 getWeightedColor(float2 uv, float2 offset){
 		float4 originColor =  tex2D(_MainTex, uv);
-    	float4 c = originColor * 0.324;
-		offset *= (1 - originColor.a) * 3;
+    	float4 c = originColor * BLUR0;
+		offset *= 1 - originColor.a;
+		float2 offsetM2 = offset * 2;
     	float2 offsetM3 = offset * 3;
-    	float2 offsetM2 = offset * 2;
-		float4 col = tex2D(_MainTex, uv + offsetM3);
-    	c += lerp(originColor, col, step(col.a, 0.998)) * 0.0205;
-		col = tex2D(_MainTex, uv + offsetM2);
-    	c += lerp(originColor, col, step(col.a, 0.998))  * 0.0855;
-		col = tex2D(_MainTex, uv + offset);
-    	c += lerp(originColor, col, step(col.a, 0.998)) * 0.232;
-		col = tex2D(_MainTex, uv - offsetM3);
-    	c += lerp(originColor, col, step(col.a, 0.998)) * 0.0205;
-		col = tex2D(_MainTex, uv - offsetM2);
-    	c += lerp(originColor, col, step(col.a, 0.998))  * 0.0855;
-		col = tex2D(_MainTex, uv - offset);
-    	c += lerp(originColor, col, step(col.a, 0.998)) * 0.232;
-		c.a = originColor.a;
+		float2 offsetM4 = offset * 4;
+		float2 offsetM5 = offset * 5;
+		float2 offsetM6 = offset * 6;
+		float4 col;
+		Gaus(offset,BLUR1)
+		Gaus(offsetM2, BLUR2)
+		Gaus(offsetM3, BLUR3)
+		Gaus(offsetM4, BLUR4)
+		Gaus(offsetM5, BLUR5)
+		Gaus(offsetM6, BLUR6)
     	return c;
     }
     	struct v2f_mg
